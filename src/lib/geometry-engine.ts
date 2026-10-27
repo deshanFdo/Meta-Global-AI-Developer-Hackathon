@@ -6,7 +6,6 @@ import type {
   Window,
   Room,
   Roof,
-  Point2D,
   RoomType,
   WallMaterial,
 } from '@/types';

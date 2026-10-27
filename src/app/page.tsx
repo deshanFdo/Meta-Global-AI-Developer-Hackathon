@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useCallback, useState } from 'react';
+import dynamic from 'next/dynamic';
 import type {
   AnalyzeResponse,
   HouseAnalysis,
-  GeneratedTextures,
   PipelineProgress as PipelineProgressType,
   PipelineStage,
   ViewerState,
@@ -13,6 +13,18 @@ import type {
 import UploadZone from '@/components/UploadZone';
 import PipelineProgress from '@/components/PipelineProgress';
 import ViewControls from '@/components/ViewControls';
+
+const HouseViewer = dynamic(() => import('@/components/HouseViewer'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full flex items-center justify-center bg-[#0c0e14]">
+      <div className="text-center space-y-3">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
+        <p className="text-xs text-gray-400">Loading 3D Canvas…</p>
+      </div>
+    </div>
+  ),
+});
 
 // ---------------------------------------------------------------------------
 // Initial state
@@ -164,6 +176,43 @@ export default function Home() {
     [advancePipeline, pipeline.startedAt],
   );
 
+  const handleLoadDemo = useCallback(async () => {
+    setViewer((prev) => ({ ...prev, isLoading: true, analysis: null, textures: null }));
+    setPipeline({ stage: 'uploading', progress: 20, message: 'Loading demo floor plan…', startedAt: Date.now() });
+
+    try {
+      advancePipeline('analyzing_structure', 'Analyzing sample blueprint…', 40);
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+          imageType: 'floor_plan',
+        }),
+      });
+
+      advancePipeline('generating_3d', 'Synthesizing 3D mesh…', 75);
+      const data: AnalyzeResponse = await res.json();
+      if (!data.success || !data.analysis) {
+        throw new Error(data.error ?? 'Analysis failed');
+      }
+
+      await new Promise((r) => setTimeout(r, 400));
+      advancePipeline('complete', 'Model ready', 100);
+
+      setViewer((prev) => ({
+        ...prev,
+        isLoading: false,
+        analysis: data.analysis as HouseAnalysis,
+        textures: data.textures ?? null,
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load demo';
+      setPipeline({ stage: 'error', progress: 0, message, startedAt: Date.now() });
+      setViewer((prev) => ({ ...prev, isLoading: false }));
+    }
+  }, [advancePipeline]);
+
   // ---- render --------------------------------------------------------------
 
   const isProcessing = viewer.isLoading;
@@ -203,8 +252,16 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Status badge */}
+          {/* Status badge & Demo button */}
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleLoadDemo}
+              disabled={isProcessing}
+              className="text-xs bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 font-medium disabled:opacity-50"
+            >
+              <span>⚡</span> Try Demo Blueprint
+            </button>
             {isProcessing && (
               <span className="flex items-center gap-1.5 text-xs text-[var(--accent)] bg-[var(--accent-muted)] px-3 py-1 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
@@ -268,43 +325,16 @@ export default function Home() {
         {/* ---- Right Panel (3D Viewer) ---- */}
         <main className="flex-1 relative bg-[#0a0c12] overflow-hidden">
           {hasAnalysis ? (
-            /* TODO: Replace with actual HouseViewer Three.js component */
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="text-center space-y-3 animate-fade-in-up">
-                <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/20 flex items-center justify-center">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="28"
-                    height="28"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="text-blue-400"
-                  >
-                    <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" />
-                    <path d="M12 12l8-4.5" />
-                    <path d="M12 12v9" />
-                    <path d="M12 12L4 7.5" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-[var(--text-primary)]">
-                    3D Model Generated
-                  </p>
-                  <p className="text-xs text-[var(--text-muted)] mt-1">
-                    {viewer.analysis?.rooms.length} rooms •{' '}
-                    {viewer.analysis?.walls.length} walls •{' '}
-                    {viewer.analysis?.metadata.totalArea.toFixed(1)} m²
-                  </p>
-                </div>
-                <p className="text-xs text-[var(--text-muted)]">
-                  HouseViewer component will render here
-                </p>
-              </div>
-            </div>
+            <HouseViewer
+              analysis={viewer.analysis}
+              textures={viewer.textures}
+              viewMode={viewer.viewMode}
+              showWireframe={viewer.showWireframe}
+              showLabels={viewer.showLabels}
+              showDimensions={viewer.showDimensions}
+              selectedElement={viewer.selectedElement}
+              onElementClick={(id) => setViewer((prev) => ({ ...prev, selectedElement: id }))}
+            />
           ) : (
             /* Placeholder when no analysis */
             <div className="w-full h-full flex items-center justify-center">
@@ -340,6 +370,13 @@ export default function Home() {
                     Drop a 2D floor plan, blueprint, or architectural drawing. Our AI pipeline
                     will analyze it and generate an interactive 3D model in seconds.
                   </p>
+                  <button
+                    type="button"
+                    onClick={handleLoadDemo}
+                    className="mt-4 inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg shadow-blue-500/25 transition-all hover:scale-105"
+                  >
+                    <span>⚡</span> Load Sample Blueprint
+                  </button>
                 </div>
 
                 <div className="flex items-center justify-center gap-4 text-[10px] text-[var(--text-muted)]">
