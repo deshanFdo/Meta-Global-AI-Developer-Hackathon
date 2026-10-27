@@ -29,7 +29,7 @@ export interface Door {
   width: number; // in meters
   height: number; // in meters
   wallId: string; // which wall it belongs to
-  style: 'single' | 'double' | 'sliding' | 'french' | 'garage';
+  style: 'single' | 'double' | 'sliding' | 'french' | 'garage' | 'pocket';
   swingDirection: 'inward' | 'outward' | 'left' | 'right';
   material: 'wood' | 'glass' | 'metal' | 'composite';
   color: string;
@@ -75,6 +75,8 @@ export type RoomType =
   | 'attic'
   | 'porch'
   | 'balcony'
+  | 'utility_room'
+  | 'patio'
   | 'unknown';
 
 /** Wall material types */
@@ -105,6 +107,39 @@ export interface Staircase {
   direction: 'up' | 'down';
   steps: number;
   type: 'straight' | 'l-shaped' | 'u-shaped' | 'spiral';
+}
+
+/** Types of identifiable furniture and architectural fixtures */
+export type FurnitureType =
+  | 'bed_double'
+  | 'bed_single'
+  | 'sofa'
+  | 'dining_table'
+  | 'chair'
+  | 'kitchen_counter'
+  | 'toilet'
+  | 'bathtub'
+  | 'sink'
+  | 'desk'
+  | 'wardrobe'
+  | 'coffee_table'
+  | 'nightstand'
+  | 'plant'
+  | 'furnace';
+
+/** Represents an interior furniture or fixture item placed in 3D space */
+export interface FurnitureItem {
+  id: string;
+  type: FurnitureType;
+  position: Point2D; // center position in meters (X, Y in 2D map -> X, Z in 3D)
+  rotation: number; // rotation in degrees (0 = aligned along X axis)
+  width: number; // width in meters
+  depth: number; // depth/length in meters
+  height: number; // height in meters
+  roomId?: string;
+  room?: string;
+  name?: string;
+  color?: string;
 }
 
 // ============================================
@@ -141,6 +176,9 @@ export interface HouseAnalysis {
 
   /** Roof configuration */
   roof: Roof;
+
+  /** Detected furniture and sanitary fixtures */
+  furniture?: FurnitureItem[];
 
   /** Staircases (if multi-floor) */
   staircases: Staircase[];
@@ -209,6 +247,8 @@ export interface ViewerState {
   showLabels: boolean;
   showDimensions: boolean;
   showWireframe: boolean;
+  showRoof: boolean; // toggle roof on/off (dollhouse mode)
+  showFurniture: boolean; // toggle interior furniture visibility
   currentFloor: number;
 }
 

@@ -75,32 +75,52 @@ READING ARCHITECTURAL FLOOR PLANS
 - Each room's vertices should form a closed polygon tracing the INNER boundary of the room's walls.
 
 ## 5. SCALE & DIMENSIONS
-- If the plan contains dimension lines with numbers, use those directly (they are in meters, centimeters, feet, or inches — convert to meters).
+- If the plan contains dimension lines with numbers, use those directly (e.g., "14 810" mm = 14.81 m, "11 300" mm = 11.30 m). Convert all millimeters, centimeters, or inches to METERS!
+- Look for dimension strings like "14 810", "11 300", "2 980", "6 640", "5 190" along grid ticks (1, 2, 3, 4 and A, B, C, D).
+- Look for room area annotations (e.g. "A:13,11 m2", "A:25,91 m2", "Area of premises 122,42 m2") and assign them to the room's "area" property.
 - If no dimensions are given, estimate scale using known references:
   - Standard single door width = 0.90 m
   - Standard toilet depth = 0.70 m
   - Standard bathtub length = 1.50 m
-  - Standard single bed width = 0.90 m, double bed width = 1.40 m
-  - Standard kitchen counter depth = 0.60 m
-- The "scale" field = (1 pixel) / (meters). For example, if a 0.90 m door measures ~45 pixels, scale = 45 / 0.90 = 50 px/m.
+  - Standard single bed width = 1.00 m, double bed width = 1.80 m
+  - Standard kitchen counter depth = 0.65 m
 - Set overallWidth and overallDepth to the bounding-box dimensions of the entire plan in meters.
 
-## 6. STAIRCASES
+## 6. FURNITURE & INTERIOR FIXTURES
+Extract all visible furniture, sanitary fixtures, and equipment so they can be modeled in 3D:
+- **"bed_double"**: Double / Queen / King bed with headboard and pillows (typically 1.8m wide, 2.1m depth).
+- **"bed_single"**: Single bed (typically 1.0m wide, 2.0m depth).
+- **"sofa"**: Living room couch / sectional (typically 2.2m to 2.8m wide, 0.9m to 1.1m depth).
+- **"dining_table"**: Dining table with chairs (typically 1.6m to 2.2m wide, 0.9m depth).
+- **"chair"**: Standalone chair / armchair.
+- **"kitchen_counter"**: Kitchen counter / island with sink and 4-burner cooktop.
+- **"toilet"**: Bathroom toilet bowl and water cistern tank.
+- **"bathtub"**: Full soaking tub (typically 1.7m length, 0.75m width).
+- **"sink"**: Bathroom or WC vanity basin.
+- **"wardrobe"**: Bedroom closet / wardrobe cabinet along walls (depth 0.6m).
+- **"desk"**: Work / study desk with chair (depth 0.7m).
+- **"coffee_table"**: Low table in front of sofa.
+- **"plant"**: Potted decorative indoor plant.
+- **"furnace"**: Water boiler / HVAC heater unit.
+
+For every furniture item, calculate its center position {x, y} in meters, rotation (0, 90, 180, 270 degrees), and dimensions.
+
+## 7. STAIRCASES
 - Staircases appear as a series of parallel lines (treads) inside a rectangular outline.
 - An arrow on the staircase indicates the direction of ascent ("up") or descent ("down").
 - Spiral staircases appear as a circular or pie-shaped element with radiating lines.
 - Count the number of visible tread lines to determine "steps".
 
-## 7. ROOF
+## 8. ROOF
 - Floor plans rarely show the roof directly. Infer from:
   - Dashed lines outside the wall boundary = roof overhang
-  - If the plan is labeled "ground floor" or shows stairs going up, the house likely has a gable or hip roof.
-  - Default to gable roof, 25° pitch, 0.5 m overhang, asphalt shingle if no evidence.
+  - Modern houses with large terrace and flat parapet = "flat" roof with 0.8m overhang.
+  - Traditional houses = "gable" or "hip" roof with 25° pitch.
 
-## 8. METADATA
-- "style": Infer from overall layout (e.g., "Ranch", "Colonial", "Modern", "Bungalow", "Split-Level"). Default "Modern" if unclear.
-- "floors": Count floor levels. If only one plan with no stairs → 1. If stairs present → likely 2+.
-- "wallHeight": Standard residential floor height = 2.70 m unless noted.
+## 9. METADATA
+- "style": Infer from overall layout (e.g., "Contemporary Villa", "Modern Residence", "Ranch", "Craftsman").
+- "floors": Count floor levels (default 1 unless multiple floor plans or stairs are present).
+- "wallHeight": Standard residential ceiling height = 2.70 m.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT FORMAT (strict JSON)
@@ -175,6 +195,18 @@ Return ONLY a single JSON object — no markdown fences, no commentary, no expla
     "material": "<asphalt_shingle|tile|metal|slate|wood_shake>",
     "color": "<hex>"
   },
+  "furniture": [
+    {
+      "id": "furn-<n>",
+      "type": "<bed_double|bed_single|sofa|dining_table|chair|kitchen_counter|toilet|bathtub|sink|desk|wardrobe|coffee_table|plant|furnace>",
+      "position": { "x": <float>, "y": <float> },
+      "rotation": <0|90|180|270>,
+      "width": <float, meters>,
+      "depth": <float, meters>,
+      "height": <float, meters>,
+      "roomId": "<matching room id>"
+    }
+  ],
   "staircases": [
     {
       "id": "stair-<n>",
@@ -582,6 +614,7 @@ function validateHouseAnalysis(analysis: HouseAnalysis): void {
   if (!Array.isArray(analysis.doors)) analysis.doors = [];
   if (!Array.isArray(analysis.windows)) analysis.windows = [];
   if (!Array.isArray(analysis.rooms)) analysis.rooms = [];
+  if (!Array.isArray(analysis.furniture)) analysis.furniture = [];
   if (!Array.isArray(analysis.staircases)) analysis.staircases = [];
 
   // Ensure roof exists with defaults

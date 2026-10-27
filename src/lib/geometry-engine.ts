@@ -9,6 +9,7 @@ import type {
   RoomType,
   WallMaterial,
 } from '@/types';
+import { FurnitureGenerator } from './furniture-generator';
 
 // ============================================
 // Material palette keyed by semantic type
@@ -29,6 +30,8 @@ const ROOM_FLOOR_COLORS: Record<RoomType, string> = {
   attic: '#c8b898',
   porch: '#a89880',
   balcony: '#b0a088',
+  utility_room: '#b8c4c8',
+  patio: '#a89880',
   unknown: '#c0b8a8',
 };
 
@@ -76,7 +79,10 @@ export class GeometryEngine {
   // ==================================================
 
   /** Orchestrates full house geometry generation. */
-  generateHouseGeometry(analysis: HouseAnalysis): THREE.Group {
+  generateHouseGeometry(
+    analysis: HouseAnalysis,
+    options?: { showRoof?: boolean; showFurniture?: boolean },
+  ): THREE.Group {
     const house = new THREE.Group();
     house.name = 'House';
 
@@ -101,8 +107,22 @@ export class GeometryEngine {
     const floorGroup = this.generateFloor(analysis.rooms);
     house.add(floorGroup);
 
-    const roofGroup = this.generateRoof(analysis);
-    house.add(roofGroup);
+    // Furniture generation (when furniture items exist and not disabled)
+    if (analysis.furniture && analysis.furniture.length > 0 && options?.showFurniture !== false) {
+      const furnGen = new FurnitureGenerator(this.centerOffsetX, this.centerOffsetZ);
+      const furnGroup = new THREE.Group();
+      furnGroup.name = 'Furniture';
+      for (const item of analysis.furniture) {
+        furnGroup.add(furnGen.generateItem(item));
+      }
+      house.add(furnGroup);
+    }
+
+    // Removable Roof (dollhouse cutaway mode when showRoof is false)
+    if (options?.showRoof !== false) {
+      const roofGroup = this.generateRoof(analysis);
+      house.add(roofGroup);
+    }
 
     const ground = this.generateGround();
     house.add(ground);
@@ -228,6 +248,23 @@ export class GeometryEngine {
       const rightJamb = leftJamb.clone();
       rightJamb.position.set(door.width / 2, door.height / 2, 0);
       doorGroup.add(rightJamb);
+
+      // Metallic Lever Handle & Escutcheon Plate (Brass / Chrome)
+      const leverMat = new THREE.MeshStandardMaterial({
+        color: 0xcca86e,
+        roughness: 0.2,
+        metalness: 0.85,
+      });
+      const plateGeom = new THREE.BoxGeometry(0.035, 0.14, 0.008);
+      const handlePlate = new THREE.Mesh(plateGeom, leverMat);
+      handlePlate.position.set(-door.width / 2 + 0.12, 0.95, thickness * 0.16);
+      doorGroup.add(handlePlate);
+
+      const leverGeom = new THREE.CylinderGeometry(0.009, 0.009, 0.1, 8);
+      const lever = new THREE.Mesh(leverGeom, leverMat);
+      lever.rotation.z = Math.PI / 2;
+      lever.position.set(-door.width / 2 + 0.16, 0.97, thickness * 0.19);
+      doorGroup.add(lever);
 
       // Position in world
       const px = door.position.x - this.centerOffsetX;
@@ -682,12 +719,14 @@ export class GeometryEngine {
 
       case 'glass':
         return new THREE.MeshPhysicalMaterial({
-          color: 0x88ccff,
+          color: 0xf5faff,
           transparent: true,
-          opacity: 0.35,
-          roughness: 0.05,
-          metalness: 0.1,
-          transmission: 0.6,
+          opacity: 0.85,
+          roughness: 0.02,
+          metalness: 0.0,
+          transmission: 0.95,
+          ior: 1.52,
+          thickness: 0.06,
           side: THREE.DoubleSide,
         });
 

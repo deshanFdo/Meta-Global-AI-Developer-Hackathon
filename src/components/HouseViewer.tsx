@@ -14,6 +14,7 @@ interface HouseViewerProps {
   showWireframe: boolean;
   showLabels: boolean;
   showDimensions: boolean;
+  showRoof: boolean;
   selectedElement: string | null;
   onElementClick?: (id: string) => void;
 }
@@ -75,6 +76,7 @@ export default function HouseViewer({
   showWireframe,
   showLabels,
   showDimensions,
+  showRoof,
   selectedElement,
   onElementClick,
 }: HouseViewerProps) {
@@ -122,6 +124,7 @@ export default function HouseViewer({
             textures={textures}
             showWireframe={showWireframe}
             showLabels={showLabels}
+            showRoof={showRoof}
             selectedElement={selectedElement}
             onElementClick={onElementClick}
           />

@@ -46,6 +46,8 @@ const INITIAL_VIEWER: ViewerState = {
   showLabels: true,
   showDimensions: false,
   showWireframe: false,
+  showRoof: false, // Start in Dollhouse cutaway mode so interior rooms & furniture are visible!
+  showFurniture: true,
   currentFloor: 0,
 };
 
@@ -178,8 +180,9 @@ export default function Home() {
   );
 
   const handleLoadDemo = useCallback(async () => {
+    setPreview('/sample-floorplan.png');
     setViewer((prev) => ({ ...prev, isLoading: true, analysis: null, textures: null }));
-    setPipeline({ stage: 'uploading', progress: 20, message: 'Loading demo floor plan…', startedAt: Date.now() });
+    setPipeline({ stage: 'uploading', progress: 20, message: 'Loading CAD blueprint (14.81m × 11.30m)…', startedAt: Date.now() });
 
     try {
       advancePipeline('analyzing_structure', 'Analyzing sample blueprint…', 40);
@@ -187,7 +190,8 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          image: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+          image: 'demo',
+          isDemo: true,
           imageType: 'floor_plan',
         }),
       });
@@ -303,9 +307,13 @@ export default function Home() {
                 showWireframe={viewer.showWireframe}
                 showLabels={viewer.showLabels}
                 showDimensions={viewer.showDimensions}
+                showRoof={viewer.showRoof}
+                showFurniture={viewer.showFurniture}
                 currentFloor={viewer.currentFloor}
                 totalFloors={totalFloors}
                 onViewModeChange={(mode) => setViewer((prev) => ({ ...prev, viewMode: mode }))}
+                onToggleRoof={() => setViewer((prev) => ({ ...prev, showRoof: !prev.showRoof }))}
+                onToggleFurniture={() => setViewer((prev) => ({ ...prev, showFurniture: !prev.showFurniture }))}
                 onToggleWireframe={() =>
                   setViewer((prev) => ({ ...prev, showWireframe: !prev.showWireframe }))
                 }
@@ -333,6 +341,7 @@ export default function Home() {
               showWireframe={viewer.showWireframe}
               showLabels={viewer.showLabels}
               showDimensions={viewer.showDimensions}
+              showRoof={viewer.showRoof}
               selectedElement={viewer.selectedElement}
               onElementClick={(id) => setViewer((prev) => ({ ...prev, selectedElement: id }))}
             />

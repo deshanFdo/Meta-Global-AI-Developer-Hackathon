@@ -11,6 +11,7 @@ interface HouseModelProps {
   textures: GeneratedTextures | null;
   showWireframe: boolean;
   showLabels: boolean;
+  showRoof: boolean;
   selectedElement: string | null;
   onElementClick?: (id: string) => void;
 }
@@ -20,6 +21,7 @@ export default function HouseModel({
   textures,
   showWireframe,
   showLabels,
+  showRoof,
   selectedElement,
   onElementClick,
 }: HouseModelProps) {
@@ -28,8 +30,8 @@ export default function HouseModel({
   // Generate 3D geometry using GeometryEngine
   const houseGroup = useMemo(() => {
     const engine = new GeometryEngine();
-    return engine.generateHouseGeometry(analysis);
-  }, [analysis]);
+    return engine.generateHouseGeometry(analysis, { showRoof, showFurniture: true });
+  }, [analysis, showRoof]);
 
   // Update wireframe state and selection highlight across all meshes in the group
   useEffect(() => {
