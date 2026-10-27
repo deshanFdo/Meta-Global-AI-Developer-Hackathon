@@ -198,7 +198,7 @@ Return ONLY a single JSON object — no markdown fences, no commentary, no expla
   "furniture": [
     {
       "id": "furn-<n>",
-      "type": "<bed_double|bed_single|sofa|dining_table|chair|kitchen_counter|toilet|bathtub|sink|desk|wardrobe|coffee_table|plant|furnace>",
+      "type": "<bed_double|bed_single|sofa|dining_table|chair|kitchen_counter|toilet|bathtub|sink|desk|wardrobe|coffee_table|plant|tv_unit|furnace>",
       "position": { "x": <float>, "y": <float> },
       "rotation": <0|90|180|270>,
       "width": <float, meters>,
@@ -220,6 +220,42 @@ Return ONLY a single JSON object — no markdown fences, no commentary, no expla
   "confidence": <float 0-1>,
   "notes": ["<string>", ...]
 }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FURNITURE FACING & ROTATION CONVENTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Coordinate frame: Origin is top-left. +X is East (right), +Y is South (down).
+Rotation is specified in degrees (0, 90, 180, 270) defining which direction the item faces:
+• SOFAS:
+  - 0°: Backrest is at North (-Y), seat cushions face SOUTH (+Y).
+  - 90°: Backrest is at West (-X), seat cushions face EAST (+X).
+  - 180°: Backrest is at South (+Y), seat cushions face NORTH (-Y).
+  - 270°: Backrest is at East (+X), seat cushions face WEST (-X).
+  (e.g., if a couch faces a TV on the East wall, it MUST have rotation: 90!)
+• BEDS:
+  - 0°: Headboard is against North wall (-Y), bed extends SOUTH (+Y).
+  - 90°: Headboard is against West wall (-X), bed extends EAST (+X).
+  - 180°: Headboard is against South wall (+Y), bed extends NORTH (-Y).
+  - 270°: Headboard is against East wall (+X), bed extends WEST (-X).
+• TV UNITS:
+  - 0°: Screen faces SOUTH (+Y).
+  - 90°: Screen faces EAST (+X).
+  - 180°: Screen faces NORTH (-Y).
+  - 270°: Screen faces WEST (-X).
+• TOILETS, SINKS, WARDROBES, DESKS:
+  - Back of item rests against the wall; user access/doors face into the room.
+  - Against North wall: 0° (faces South into room).
+  - Against West wall: 90° (faces East into room).
+  - Against South wall: 180° (faces North into room).
+  - Against East wall: 270° (faces West into room).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WALL ENCLOSURE & PARTITION COMPLETENESS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. DO NOT SKIP ANY INTERIOR PARTITION WALLS. Every room and corridor must have complete bounding walls.
+2. In particular: trace corridor dividing walls separating hallways from living rooms, and terrace boundary walls.
+3. Every functional room polygon MUST be bordered by actual wall segments.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FEW-SHOT COORDINATE EXAMPLE

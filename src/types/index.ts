@@ -125,6 +125,7 @@ export type FurnitureType =
   | 'coffee_table'
   | 'nightstand'
   | 'plant'
+  | 'tv_unit'
   | 'furnace';
 
 /** Represents an interior furniture or fixture item placed in 3D space */

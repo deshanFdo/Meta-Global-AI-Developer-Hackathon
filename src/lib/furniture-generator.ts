@@ -130,6 +130,9 @@ export class FurnitureGenerator {
       case 'plant':
         this.buildPlant(group, item);
         break;
+      case 'tv_unit':
+        this.buildTVUnit(group, item);
+        break;
       case 'furnace':
         this.buildFurnace(group, item);
         break;
@@ -560,6 +563,34 @@ export class FurnitureGenerator {
     const hvac = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.2, 0.5), WOOD_DARK);
     hvac.position.set(0.55, 0.6, 0);
     group.add(hvac);
+  }
+
+  private buildTVUnit(group: THREE.Group, item: FurnitureItem): void {
+    const w = item.width || 2.0;
+    const d = item.depth || 0.45;
+    const h = 0.45;
+
+    // 1. Low Credenza / Media Cabinet
+    const cabinet = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), WOOD_DARK);
+    cabinet.position.y = h / 2;
+    group.add(cabinet);
+
+    // 2. Chrome TV Stand Post & Base
+    const stand = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.08, 0.25), CHROME_METAL);
+    stand.position.set(0, h + 0.04, 0);
+    group.add(stand);
+
+    // 3. Ultra-Slim 65" TV Display (front face towards +Z at rotation 0)
+    const tvW = Math.min(w * 0.8, 1.5);
+    const tvH = 0.88;
+    const tvBody = new THREE.Mesh(new THREE.BoxGeometry(tvW, tvH, 0.04), COOKTOP_GLASS);
+    tvBody.position.set(0, h + 0.08 + tvH / 2, 0);
+    group.add(tvBody);
+
+    // 4. Glossy Screen Border / Bezel
+    const bezel = new THREE.Mesh(new THREE.BoxGeometry(tvW + 0.02, tvH + 0.02, 0.02), CHROME_METAL);
+    bezel.position.set(0, h + 0.08 + tvH / 2, -0.01);
+    group.add(bezel);
   }
 
   private buildGenericCabinet(group: THREE.Group, item: FurnitureItem): void {
