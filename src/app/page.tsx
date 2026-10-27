@@ -117,6 +117,7 @@ export default function Home() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             image: base64,
+            mimeType: file.type || 'image/png',
             imageType: 'floor_plan',
             options: { generateTextures: true, detailLevel: 'high' },
           }),

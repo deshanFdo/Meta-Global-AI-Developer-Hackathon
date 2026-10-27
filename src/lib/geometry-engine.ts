@@ -139,15 +139,16 @@ export class GeometryEngine {
     const dx = wall.end.x - wall.start.x;
     const dz = wall.end.y - wall.start.y;
     const length = Math.sqrt(dx * dx + dz * dz);
+    const safeLength = Math.max(length, 0.05);
 
     // Exterior walls rendered slightly thicker for visual distinction
     const thickness = wall.isExterior
-      ? Math.max(wall.thickness, 0.2)
-      : Math.max(wall.thickness, 0.12);
+      ? Math.max(wall.thickness || 0.25, 0.2)
+      : Math.max(wall.thickness || 0.12, 0.12);
 
-    const wallHeight = wall.height > 0 ? wall.height : height;
+    const wallHeight = wall.height > 0 ? wall.height : (height || 2.7);
 
-    const geom = new THREE.BoxGeometry(length, wallHeight, thickness);
+    const geom = new THREE.BoxGeometry(safeLength, wallHeight, thickness);
 
     const color = wall.color || WALL_MATERIAL_COLORS[wall.material] || '#f0ece0';
     const mat = this.createMaterial('wall', color) as THREE.MeshStandardMaterial;
