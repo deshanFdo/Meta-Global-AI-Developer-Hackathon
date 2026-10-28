@@ -126,7 +126,9 @@ export type FurnitureType =
   | 'nightstand'
   | 'plant'
   | 'tv_unit'
-  | 'furnace';
+  | 'furnace'
+  | 'washing_machine'
+  | 'column';
 
 /** Represents an interior furniture or fixture item placed in 3D space */
 export interface FurnitureItem {
@@ -244,7 +246,8 @@ export interface ViewerState {
   analysis: HouseAnalysis | null;
   textures: GeneratedTextures | null;
   selectedElement: string | null; // id of selected wall/door/window
-  viewMode: 'perspective' | 'top' | 'front' | 'side';
+  viewMode: 'perspective' | 'top' | 'front' | 'side' | 'first-person';
+  lightingMode?: 'day' | 'golden_hour' | 'night';
   showLabels: boolean;
   showDimensions: boolean;
   showWireframe: boolean;

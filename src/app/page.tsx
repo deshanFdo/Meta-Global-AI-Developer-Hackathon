@@ -13,6 +13,9 @@ import type {
 import UploadZone from '@/components/UploadZone';
 import PipelineProgress from '@/components/PipelineProgress';
 import ViewControls from '@/components/ViewControls';
+import ArchitectureInspector from '@/components/ArchitectureInspector';
+import { exportHouseToGLB } from '@/lib/export-3d';
+import { GeometryEngine } from '@/lib/geometry-engine';
 
 const HouseViewer = dynamic(() => import('@/components/HouseViewer'), {
   ssr: false,
@@ -77,6 +80,8 @@ export default function Home() {
   const [viewer, setViewer] = useState<ViewerState>(INITIAL_VIEWER);
   const [pipeline, setPipeline] = useState<PipelineProgressType>(INITIAL_PIPELINE);
   const [preview, setPreview] = useState<string | null>(null);
+  const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+  const [lightingMode, setLightingMode] = useState<'day' | 'golden_hour' | 'night'>('day');
 
   // ---- pipeline helpers ----------------------------------------------------
 
@@ -218,6 +223,13 @@ export default function Home() {
     }
   }, [advancePipeline]);
 
+  const handleExportGLB = useCallback(() => {
+    if (!viewer.analysis) return;
+    const engine = new GeometryEngine();
+    const house = engine.generateHouseGeometry(viewer.analysis, { showRoof: true, showFurniture: true });
+    exportHouseToGLB(house, `${viewer.analysis.metadata.style.toLowerCase().replace(/\s+/g, '-')}-3d-model.glb`);
+  }, [viewer.analysis]);
+
   // ---- render --------------------------------------------------------------
 
   const isProcessing = viewer.isLoading;
@@ -279,6 +291,20 @@ export default function Home() {
                 Model Ready
               </span>
             )}
+            {hasAnalysis && (
+              <button
+                type="button"
+                onClick={() => setIsInspectorOpen((p) => !p)}
+                className={`text-xs border px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 font-medium ${
+                  isInspectorOpen
+                    ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/30'
+                    : 'bg-white/5 hover:bg-white/10 text-gray-200 border-white/10'
+                }`}
+              >
+                <span>🤖</span>
+                <span>AI Architecture Audit</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -304,6 +330,7 @@ export default function Home() {
             {hasAnalysis && (
               <ViewControls
                 viewMode={viewer.viewMode}
+                lightingMode={lightingMode}
                 showWireframe={viewer.showWireframe}
                 showLabels={viewer.showLabels}
                 showDimensions={viewer.showDimensions}
@@ -312,6 +339,7 @@ export default function Home() {
                 currentFloor={viewer.currentFloor}
                 totalFloors={totalFloors}
                 onViewModeChange={(mode) => setViewer((prev) => ({ ...prev, viewMode: mode }))}
+                onLightingChange={setLightingMode}
                 onToggleRoof={() => setViewer((prev) => ({ ...prev, showRoof: !prev.showRoof }))}
                 onToggleFurniture={() => setViewer((prev) => ({ ...prev, showFurniture: !prev.showFurniture }))}
                 onToggleWireframe={() =>
@@ -326,6 +354,7 @@ export default function Home() {
                 onFloorChange={(floor) =>
                   setViewer((prev) => ({ ...prev, currentFloor: floor }))
                 }
+                onExportGLB={handleExportGLB}
               />
             )}
           </div>
@@ -338,6 +367,7 @@ export default function Home() {
               analysis={viewer.analysis}
               textures={viewer.textures}
               viewMode={viewer.viewMode}
+              lightingMode={lightingMode}
               showWireframe={viewer.showWireframe}
               showLabels={viewer.showLabels}
               showDimensions={viewer.showDimensions}
@@ -421,6 +451,13 @@ export default function Home() {
               </div>
             </div>
           )}
+          {/* Architecture Inspector Drawer */}
+          <ArchitectureInspector
+            analysis={viewer.analysis}
+            isOpen={isInspectorOpen}
+            onClose={() => setIsInspectorOpen(false)}
+            onSelectRoom={(roomId) => setViewer((prev) => ({ ...prev, selectedElement: roomId }))}
+          />
         </main>
       </div>
     </div>

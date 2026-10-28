@@ -10,6 +10,7 @@ import type {
   WallMaterial,
 } from '@/types';
 import { FurnitureGenerator } from './furniture-generator';
+import { ProceduralTextureGenerator } from './texture-generator';
 
 // ============================================
 // Material palette keyed by semantic type
@@ -70,7 +71,7 @@ const ROOF_COLORS: Record<string, string> = {
  */
 export class GeometryEngine {
   // ---------- cached state for door/window subtraction ----------
-  private wallMeshes: Map<string, THREE.Mesh> = new Map();
+  private wallMeshes: Map<string, THREE.Object3D> = new Map();
   private centerOffsetX = 0;
   private centerOffsetZ = 0;
 
@@ -94,13 +95,16 @@ export class GeometryEngine {
     this.wallMeshes.clear();
 
     // --- Layers ---
+    // Generate walls with true physical openings (piers, sills, lintels)
     const wallGroup = this.generateWalls(
       analysis.walls,
       analysis.metadata.wallHeight,
+      analysis.doors,
+      analysis.windows,
     );
     house.add(wallGroup);
 
-    // Doors & windows mutate the wall group in-place
+    // Doors & windows mutate the wall group in-place with frames, glass, and hardware
     this.generateDoorOpenings(analysis.doors, analysis.walls);
     this.generateWindowOpenings(analysis.windows, analysis.walls);
 
@@ -139,54 +143,171 @@ export class GeometryEngine {
   }
 
   // ==================================================
-  // Walls
+  // Walls (Decomposed into Solid Piers, Sills, and Lintels)
   // ==================================================
 
-  generateWalls(walls: Wall[], wallHeight: number): THREE.Group {
+  generateWalls(
+    walls: Wall[],
+    wallHeight: number,
+    doors: Door[] = [],
+    windows: Window[] = [],
+  ): THREE.Group {
     const group = new THREE.Group();
     group.name = 'Walls';
 
     for (const wall of walls) {
-      const mesh = this.wallToMesh(wall, wallHeight);
-      group.add(mesh);
-      this.wallMeshes.set(wall.id, mesh);
+      const obj = this.wallToMesh(wall, wallHeight, doors, windows);
+      group.add(obj);
+      this.wallMeshes.set(wall.id, obj);
     }
 
     return group;
   }
 
-  wallToMesh(wall: Wall, height: number): THREE.Mesh {
+  wallToMesh(
+    wall: Wall,
+    height: number,
+    doors: Door[] = [],
+    windows: Window[] = [],
+  ): THREE.Object3D {
     const dx = wall.end.x - wall.start.x;
     const dz = wall.end.y - wall.start.y;
     const length = Math.sqrt(dx * dx + dz * dz);
     const safeLength = Math.max(length, 0.05);
 
-    // Exterior walls rendered slightly thicker for visual distinction
+    // Exterior walls rendered slightly thicker for authentic insulated masonry envelope
     const thickness = wall.isExterior
-      ? Math.max(wall.thickness || 0.25, 0.2)
-      : Math.max(wall.thickness || 0.12, 0.12);
+      ? Math.max(wall.thickness || 0.28, 0.2)
+      : Math.max(wall.thickness || 0.15, 0.12);
 
-    const wallHeight = wall.height > 0 ? wall.height : (height || 2.7);
-
-    const geom = new THREE.BoxGeometry(safeLength, wallHeight, thickness);
-
+    const wallHeight = wall.height > 0 ? wall.height : (height || 2.8);
     const color = wall.color || WALL_MATERIAL_COLORS[wall.material] || '#f0ece0';
     const mat = this.createMaterial('wall', color) as THREE.MeshStandardMaterial;
 
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.name = `wall_${wall.id}`;
-    mesh.userData = { elementType: 'wall', elementId: wall.id, wall };
+    const angle = Math.atan2(dz, dx);
+    const ux = dx / safeLength;
+    const uz = dz / safeLength;
 
-    // Position at midpoint, elevated so base sits on Y=0
+    // Collect openings on this wall
+    interface WallVoid {
+      type: 'door' | 'window';
+      startT: number;
+      endT: number;
+      sillHeight: number;
+      headHeight: number;
+    }
+
+    const voids: WallVoid[] = [];
+
+    // Find doors intersecting this wall
+    for (const d of doors) {
+      if (d.wallId === wall.id) {
+        const centerT = (d.position.x - wall.start.x) * ux + (d.position.y - wall.start.y) * uz;
+        const halfW = d.width / 2;
+        voids.push({
+          type: 'door',
+          startT: Math.max(0, centerT - halfW),
+          endT: Math.min(safeLength, centerT + halfW),
+          sillHeight: 0,
+          headHeight: Math.min(d.height, wallHeight - 0.05),
+        });
+      }
+    }
+
+    // Find windows intersecting this wall
+    for (const w of windows) {
+      if (w.wallId === wall.id) {
+        const centerT = (w.position.x - wall.start.x) * ux + (w.position.y - wall.start.y) * uz;
+        const halfW = w.width / 2;
+        const sill = Math.max(0, w.sillHeight);
+        const head = Math.min(wallHeight - 0.05, sill + w.height);
+        voids.push({
+          type: 'window',
+          startT: Math.max(0, centerT - halfW),
+          endT: Math.min(safeLength, centerT + halfW),
+          sillHeight: sill,
+          headHeight: head,
+        });
+      }
+    }
+
+    // Midpoint position in world coordinates
     const mx = (wall.start.x + wall.end.x) / 2 - this.centerOffsetX;
     const mz = (wall.start.y + wall.end.y) / 2 - this.centerOffsetZ;
-    mesh.position.set(mx, wallHeight / 2, mz);
 
-    // Rotate around Y so the long axis aligns with the wall segment direction
-    const angle = Math.atan2(dz, dx);
-    mesh.rotation.y = -angle;
+    // Case 1: Solid wall without openings
+    if (voids.length === 0) {
+      const geom = new THREE.BoxGeometry(safeLength, wallHeight, thickness);
+      const mesh = new THREE.Mesh(geom, mat);
+      mesh.name = `wall_${wall.id}`;
+      mesh.userData = { elementType: 'wall', elementId: wall.id, wall };
+      mesh.position.set(mx, wallHeight / 2, mz);
+      mesh.rotation.y = -angle;
+      return mesh;
+    }
 
-    return mesh;
+    // Case 2: Wall with architectural openings (Piers, Sills, and Lintels)
+    voids.sort((a, b) => a.startT - b.startT);
+
+    const wallGroup = new THREE.Group();
+    wallGroup.name = `wall_${wall.id}`;
+    wallGroup.userData = { elementType: 'wall', elementId: wall.id, wall };
+    wallGroup.position.set(mx, 0, mz);
+    wallGroup.rotation.y = -angle;
+
+    const halfL = safeLength / 2;
+    let curT = 0;
+
+    for (let i = 0; i < voids.length; i++) {
+      const v = voids[i];
+
+      // Solid Pier before this opening
+      const pierLen = v.startT - curT;
+      if (pierLen > 0.04) {
+        const pierGeom = new THREE.BoxGeometry(pierLen, wallHeight, thickness);
+        const pierMesh = new THREE.Mesh(pierGeom, mat);
+        const pierCenterLocalX = curT + pierLen / 2 - halfL;
+        pierMesh.position.set(pierCenterLocalX, wallHeight / 2, 0);
+        wallGroup.add(pierMesh);
+      }
+
+      // Opening region
+      const openLen = v.endT - v.startT;
+      if (openLen > 0.04) {
+        const openCenterLocalX = v.startT + openLen / 2 - halfL;
+
+        // Sill under window
+        if (v.type === 'window' && v.sillHeight > 0.04) {
+          const sillGeom = new THREE.BoxGeometry(openLen, v.sillHeight, thickness);
+          const sillMesh = new THREE.Mesh(sillGeom, mat);
+          sillMesh.position.set(openCenterLocalX, v.sillHeight / 2, 0);
+          wallGroup.add(sillMesh);
+        }
+
+        // Lintel above opening
+        const lintelH = wallHeight - v.headHeight;
+        if (lintelH > 0.04) {
+          const lintelGeom = new THREE.BoxGeometry(openLen, lintelH, thickness);
+          const lintelMesh = new THREE.Mesh(lintelGeom, mat);
+          lintelMesh.position.set(openCenterLocalX, v.headHeight + lintelH / 2, 0);
+          wallGroup.add(lintelMesh);
+        }
+      }
+
+      curT = Math.max(curT, v.endT);
+    }
+
+    // Final Pier after the last opening
+    const finalPierLen = safeLength - curT;
+    if (finalPierLen > 0.04) {
+      const finalGeom = new THREE.BoxGeometry(finalPierLen, wallHeight, thickness);
+      const finalMesh = new THREE.Mesh(finalGeom, mat);
+      const finalCenterLocalX = curT + finalPierLen / 2 - halfL;
+      finalMesh.position.set(finalCenterLocalX, wallHeight / 2, 0);
+      wallGroup.add(finalMesh);
+    }
+
+    return wallGroup;
   }
 
   // ==================================================
@@ -423,7 +544,45 @@ export class GeometryEngine {
       geom.rotateX(-Math.PI / 2);
 
       const color = ROOM_FLOOR_COLORS[room.type] ?? ROOM_FLOOR_COLORS.unknown;
-      const mat = this.createMaterial('floor', color);
+      const mat = this.createMaterial('floor', color) as THREE.MeshStandardMaterial;
+
+      // Apply procedural PBR textures by semantic room function
+      if (
+        room.type === 'living_room' ||
+        room.type === 'bedroom' ||
+        room.type === 'office' ||
+        room.type === 'hallway'
+      ) {
+        const parquet = ProceduralTextureGenerator.getParquetTexture();
+        if (parquet) {
+          mat.map = parquet;
+          mat.roughness = 0.42;
+          mat.needsUpdate = true;
+        }
+      } else if (
+        room.type === 'bathroom' ||
+        room.type === 'kitchen' ||
+        room.type === 'laundry' ||
+        room.type === 'utility_room'
+      ) {
+        const tile = ProceduralTextureGenerator.getTileTexture();
+        if (tile) {
+          mat.map = tile;
+          mat.roughness = 0.22;
+          mat.needsUpdate = true;
+        }
+      } else if (
+        room.type === 'patio' ||
+        room.type === 'porch' ||
+        room.type === 'balcony'
+      ) {
+        const paver = ProceduralTextureGenerator.getTerracePaverTexture();
+        if (paver) {
+          mat.map = paver;
+          mat.roughness = 0.65;
+          mat.needsUpdate = true;
+        }
+      }
 
       const mesh = new THREE.Mesh(geom, mat);
       mesh.name = `floor_${room.id}`;
@@ -498,62 +657,58 @@ export class GeometryEngine {
     roof: Roof,
     mat: THREE.Material,
   ): void {
-    const pitch = THREE.MathUtils.degToRad(roof.pitch || 30);
+    const pitch = THREE.MathUtils.degToRad(roof.pitch || 28);
     const ridgeHeight = (d / 2) * Math.tan(pitch);
-
-    // Two inclined planes along Z axis meeting at the ridge
     const slopeLength = (d / 2) / Math.cos(pitch);
 
-    const planeGeom = new THREE.PlaneGeometry(w, slopeLength);
+    // Solid insulated roof panels (0.14m thick with eaves overhang)
+    const slabThickness = 0.14;
+    const slabGeom = new THREE.BoxGeometry(w, slabThickness, slopeLength);
 
-    // Left slope (negative Z side looking from above)
-    const left = new THREE.Mesh(planeGeom, mat);
-    left.rotation.x = Math.PI / 2 - pitch;
-    left.position.set(0, baseY + ridgeHeight / 2, -d / 4 * Math.cos(pitch));
-    left.position.y = baseY + ridgeHeight / 2;
-    left.position.z = -d / 4;
-    // Re-orient: rotate around X so the plane tilts
-    left.rotation.set(Math.PI / 2 - pitch, 0, 0);
-    left.position.set(0, baseY + ridgeHeight / 2, -d / 4);
-    left.name = 'roof_gable_left';
-    group.add(left);
+    // North slope (negative Z side looking from above)
+    const northSlope = new THREE.Mesh(slabGeom, mat);
+    northSlope.rotation.set(pitch, 0, 0);
+    northSlope.position.set(0, baseY + ridgeHeight / 2, -d / 4);
+    northSlope.name = 'roof_gable_north_slope';
+    group.add(northSlope);
 
-    // Right slope (positive Z side)
-    const right = new THREE.Mesh(planeGeom, mat);
-    right.rotation.set(-(Math.PI / 2 - pitch), 0, 0);
-    right.position.set(0, baseY + ridgeHeight / 2, d / 4);
-    right.name = 'roof_gable_right';
-    group.add(right);
+    // South slope (positive Z side)
+    const southSlope = new THREE.Mesh(slabGeom, mat);
+    southSlope.rotation.set(-pitch, 0, 0);
+    southSlope.position.set(0, baseY + ridgeHeight / 2, d / 4);
+    southSlope.name = 'roof_gable_south_slope';
+    group.add(southSlope);
 
-    // Gable end triangles (front and back)
+    // Ridge cap flashing beam along the peak
+    const ridgeCapGeom = new THREE.BoxGeometry(w + 0.1, 0.08, 0.25);
+    const ridgeCap = new THREE.Mesh(ridgeCapGeom, mat);
+    ridgeCap.position.set(0, baseY + ridgeHeight + 0.04, 0);
+    ridgeCap.name = 'roof_gable_ridge_cap';
+    group.add(ridgeCap);
+
+    // West and East gable end walls enclosing the attic space
     const gableShape = new THREE.Shape();
-    gableShape.moveTo(-w / 2, 0);
-    gableShape.lineTo(w / 2, 0);
-    gableShape.lineTo(w / 2, 0);
+    gableShape.moveTo(-d / 2, 0);
+    gableShape.lineTo(d / 2, 0);
     gableShape.lineTo(0, ridgeHeight);
-    gableShape.lineTo(-w / 2, 0);
+    gableShape.closePath();
 
-    // Actually the gable ends are perpendicular — along the X axis
-    // We need triangles at front (Z = -d/2) and back (Z = d/2)
-    const gableEndShape = new THREE.Shape();
-    gableEndShape.moveTo(-w / 2, 0);
-    gableEndShape.lineTo(w / 2, 0);
-    gableEndShape.lineTo(0, ridgeHeight);
-    gableEndShape.closePath();
+    const gableGeom = new THREE.ShapeGeometry(gableShape);
+    const wallMat = this.createMaterial('wall', '#ECEAE4');
 
-    const gableGeom = new THREE.ShapeGeometry(gableEndShape);
-    const wallMat = this.createMaterial('wall', '#f0ece0');
+    // West gable end (at X = -w / 2)
+    const westGable = new THREE.Mesh(gableGeom, wallMat);
+    westGable.rotation.y = -Math.PI / 2;
+    westGable.position.set(-w / 2, baseY, 0);
+    westGable.name = 'roof_gable_west_end';
+    group.add(westGable);
 
-    const frontGable = new THREE.Mesh(gableGeom, wallMat);
-    frontGable.position.set(0, baseY, -d / 2);
-    frontGable.name = 'roof_gable_front_end';
-    group.add(frontGable);
-
-    const backGable = new THREE.Mesh(gableGeom, wallMat);
-    backGable.rotation.y = Math.PI;
-    backGable.position.set(0, baseY, d / 2);
-    backGable.name = 'roof_gable_back_end';
-    group.add(backGable);
+    // East gable end (at X = +w / 2)
+    const eastGable = new THREE.Mesh(gableGeom, wallMat);
+    eastGable.rotation.y = Math.PI / 2;
+    eastGable.position.set(w / 2, baseY, 0);
+    eastGable.name = 'roof_gable_east_end';
+    group.add(eastGable);
   }
 
   private buildHipRoof(
@@ -678,13 +833,20 @@ export class GeometryEngine {
     const c = new THREE.Color(color);
 
     switch (type) {
-      case 'wall':
-        return new THREE.MeshStandardMaterial({
+      case 'wall': {
+        const wallMat = new THREE.MeshStandardMaterial({
           color: c,
           roughness: 0.85,
           metalness: 0.02,
           side: THREE.DoubleSide,
         });
+        const bump = ProceduralTextureGenerator.getStuccoBumpTexture();
+        if (bump) {
+          wallMat.bumpMap = bump;
+          wallMat.bumpScale = 0.003;
+        }
+        return wallMat;
+      }
 
       case 'floor':
         return new THREE.MeshStandardMaterial({

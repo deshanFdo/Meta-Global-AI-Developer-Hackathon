@@ -65,6 +65,12 @@ const LEAF_GREEN = new THREE.MeshStandardMaterial({
   metalness: 0.0,
 });
 
+const COLUMN_STUCCO = new THREE.MeshStandardMaterial({
+  color: 0xeceae4,
+  roughness: 0.85,
+  metalness: 0.05,
+});
+
 // ============================================
 // Procedural Furniture Generator
 // ============================================
@@ -135,6 +141,12 @@ export class FurnitureGenerator {
         break;
       case 'furnace':
         this.buildFurnace(group, item);
+        break;
+      case 'washing_machine':
+        this.buildWashingMachine(group, item);
+        break;
+      case 'column':
+        this.buildColumn(group, item);
         break;
       default:
         this.buildGenericCabinet(group, item);
@@ -591,6 +603,60 @@ export class FurnitureGenerator {
     const bezel = new THREE.Mesh(new THREE.BoxGeometry(tvW + 0.02, tvH + 0.02, 0.02), CHROME_METAL);
     bezel.position.set(0, h + 0.08 + tvH / 2, -0.01);
     group.add(bezel);
+  }
+
+  private buildWashingMachine(group: THREE.Group, item: FurnitureItem): void {
+    const w = item.width || 0.65;
+    const d = item.depth || 0.65;
+    const h = item.height || 0.85;
+
+    // 1. Appliance Body
+    const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), CERAMIC_WHITE);
+    body.position.y = h / 2;
+    group.add(body);
+
+    // 2. Front Door Trim Ring (Chrome)
+    const doorRing = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.03, 24), CHROME_METAL);
+    doorRing.rotation.x = Math.PI / 2;
+    doorRing.position.set(0, h * 0.45, d / 2 + 0.015);
+    group.add(doorRing);
+
+    // 3. Dark Smoked Glass Center
+    const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.035, 24), COOKTOP_GLASS);
+    glass.rotation.x = Math.PI / 2;
+    glass.position.set(0, h * 0.45, d / 2 + 0.02);
+    group.add(glass);
+
+    // 4. Control Panel Top Drawer & Dial
+    const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.02, 16), CHROME_METAL);
+    dial.rotation.x = Math.PI / 2;
+    dial.position.set(0.08, h - 0.08, d / 2 + 0.01);
+    group.add(dial);
+
+    const drawer = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.01), FABRIC_CHARCOAL);
+    drawer.position.set(-w / 4, h - 0.08, d / 2 + 0.006);
+    group.add(drawer);
+  }
+
+  private buildColumn(group: THREE.Group, item: FurnitureItem): void {
+    const w = item.width || 0.35;
+    const d = item.depth || 0.35;
+    const h = item.height || 2.8;
+
+    // 1. Plinth / Base
+    const plinth = new THREE.Mesh(new THREE.BoxGeometry(w + 0.08, 0.15, d + 0.08), COLUMN_STUCCO);
+    plinth.position.y = 0.075;
+    group.add(plinth);
+
+    // 2. Shaft
+    const shaft = new THREE.Mesh(new THREE.BoxGeometry(w, h - 0.3, d), COLUMN_STUCCO);
+    shaft.position.y = (h - 0.3) / 2 + 0.15;
+    group.add(shaft);
+
+    // 3. Capital / Top Molding
+    const capital = new THREE.Mesh(new THREE.BoxGeometry(w + 0.08, 0.15, d + 0.08), COLUMN_STUCCO);
+    capital.position.y = h - 0.075;
+    group.add(capital);
   }
 
   private buildGenericCabinet(group: THREE.Group, item: FurnitureItem): void {

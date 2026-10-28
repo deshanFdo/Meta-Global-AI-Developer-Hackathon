@@ -198,7 +198,7 @@ Return ONLY a single JSON object — no markdown fences, no commentary, no expla
   "furniture": [
     {
       "id": "furn-<n>",
-      "type": "<bed_double|bed_single|sofa|dining_table|chair|kitchen_counter|toilet|bathtub|sink|desk|wardrobe|coffee_table|plant|tv_unit|furnace>",
+      "type": "<bed_double|bed_single|sofa|dining_table|chair|kitchen_counter|toilet|bathtub|sink|desk|wardrobe|coffee_table|plant|tv_unit|furnace|washing_machine|column>",
       "position": { "x": <float>, "y": <float> },
       "rotation": <0|90|180|270>,
       "width": <float, meters>,
