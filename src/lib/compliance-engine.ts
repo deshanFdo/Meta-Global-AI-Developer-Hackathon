@@ -140,3 +140,4 @@ export function auditBuildingCompliance(analysis: HouseAnalysis): BuildingCompli
     },
   };
 }
+

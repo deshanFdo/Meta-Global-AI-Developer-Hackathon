@@ -22,6 +22,7 @@ import SolarStudyControl from '@/components/SolarStudyControl';
 import ARModal from '@/components/ARModal';
 import PlanAssistant from '@/components/PlanAssistant';
 import { GeometryEngine } from '@/lib/geometry-engine';
+import { soundscape } from '@/lib/soundscape';
 
 const HouseViewer = dynamic(() => import('@/components/HouseViewer'), {
   ssr: false,
@@ -69,7 +70,6 @@ function fileToBase64(file: File): Promise<string> {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      // Strip data URI prefix — API expects raw base64
       const base64 = result.split(',')[1] ?? result;
       resolve(base64);
     };
@@ -97,6 +97,10 @@ export default function Home() {
   });
   const [isSolarStudyOpen, setIsSolarStudyOpen] = useState(false);
   const [isARModalOpen, setIsARModalOpen] = useState(false);
+  const [isMeasuring, setIsMeasuring] = useState(false);
+  const [showMinimap, setShowMinimap] = useState(true);
+  const [isSoundEnabled, setIsSoundEnabled] = useState(false);
+  const [selectedArchetype, setSelectedArchetype] = useState<'villa' | 'loft' | 'eco_cabin'>('villa');
 
   // ---- pipeline helpers ----------------------------------------------------
 
@@ -117,22 +121,18 @@ export default function Home() {
 
   const handleFileSelect = useCallback(
     async (file: File) => {
-      // Preview
       const objectUrl = URL.createObjectURL(file);
       setPreview(objectUrl);
 
-      // Reset state
       setViewer((prev) => ({ ...prev, isLoading: true, analysis: null, textures: null }));
       setPipeline({ stage: 'uploading', progress: 0, message: 'Preparing image…', startedAt: Date.now() });
 
       try {
-        // Stage 1: upload / encode
         advancePipeline('uploading', 'Encoding image…', 30);
         const base64 = await fileToBase64(file);
         advancePipeline('uploading', 'Image encoded', 100);
 
-        // Stage 2: analyze
-        advancePipeline('analyzing_structure', 'Sending to Muse Spark…', 10);
+        advancePipeline('analyzing_structure', 'Analyzing with Meta Muse Spark…', 10);
 
         const response = await fetch('/api/analyze', {
           method: 'POST',
@@ -151,7 +151,6 @@ export default function Home() {
           throw new Error(data.error ?? 'Analysis failed');
         }
 
-        // Done!
         setPipeline({
           stage: 'complete',
           progress: 100,
@@ -179,43 +178,59 @@ export default function Home() {
     [advancePipeline, pipeline.startedAt],
   );
 
-  const handleLoadDemo = useCallback(async () => {
-    setPreview('/sample-floorplan.png');
-    setViewer((prev) => ({ ...prev, isLoading: true, analysis: null, textures: null }));
-    setPipeline({ stage: 'uploading', progress: 20, message: 'Loading CAD blueprint (14.81m × 11.30m)…', startedAt: Date.now() });
+  const handleLoadArchetype = useCallback(
+    async (arch: 'villa' | 'loft' | 'eco_cabin') => {
+      setSelectedArchetype(arch);
+      setPreview(arch === 'villa' ? '/sample-floorplan.png' : null);
+      setViewer((prev) => ({ ...prev, isLoading: true, analysis: null, textures: null }));
 
-    try {
-      advancePipeline('analyzing_structure', 'Analyzing sample blueprint…', 40);
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image: 'demo',
-          isDemo: true,
-          imageType: 'floor_plan',
-        }),
+      const labels = {
+        villa: 'Scandinavian Villa (122.4 m²)',
+        loft: 'Industrial Urban Loft (74.2 m²)',
+        eco_cabin: 'Eco Timber Micro-Cabin (42.5 m²)',
+      };
+
+      setPipeline({
+        stage: 'uploading',
+        progress: 20,
+        message: `Loading ${labels[arch]}…`,
+        startedAt: Date.now(),
       });
 
-      advancePipeline('uploading', 'Loading prebuilt sample…', 75);
-      const data: AnalyzeResponse = await res.json();
-      if (!data.success || !data.analysis) {
-        throw new Error(data.error ?? 'Analysis failed');
+      try {
+        advancePipeline('analyzing_structure', `Extracting ${labels[arch]} layout…`, 45);
+        const res = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: 'archetype',
+            archetype: arch,
+            isDemo: true,
+          }),
+        });
+
+        advancePipeline('uploading', 'Generating 3D BIM geometry…', 80);
+        const data: AnalyzeResponse = await res.json();
+        if (!data.success || !data.analysis) {
+          throw new Error(data.error ?? 'Analysis failed');
+        }
+
+        advancePipeline('complete', 'Model ready', 100);
+
+        setViewer((prev) => ({
+          ...prev,
+          isLoading: false,
+          analysis: data.analysis as HouseAnalysis,
+          textures: data.textures ?? null,
+        }));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load archetype';
+        setPipeline({ stage: 'error', progress: 0, message, startedAt: Date.now() });
+        setViewer((prev) => ({ ...prev, isLoading: false }));
       }
-
-      advancePipeline('complete', 'Model ready', 100);
-
-      setViewer((prev) => ({
-        ...prev,
-        isLoading: false,
-        analysis: data.analysis as HouseAnalysis,
-        textures: data.textures ?? null,
-      }));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load demo';
-      setPipeline({ stage: 'error', progress: 0, message, startedAt: Date.now() });
-      setViewer((prev) => ({ ...prev, isLoading: false }));
-    }
-  }, [advancePipeline]);
+    },
+    [advancePipeline],
+  );
 
   const handleExportGLB = useCallback(() => {
     if (!viewer.analysis) return;
@@ -240,6 +255,19 @@ export default function Home() {
       setSolarStudy((s) => ({ ...s, enabled: next }));
       return next;
     });
+  }, []);
+
+  const handleToggleSound = useCallback(() => {
+    setIsSoundEnabled((prev) => {
+      const next = !prev;
+      soundscape.setMuted(!next);
+      return next;
+    });
+  }, []);
+
+  const handleLightingChange = useCallback((mode: 'day' | 'golden_hour' | 'night') => {
+    setLightingMode(mode);
+    soundscape.setNightMode(mode === 'night');
   }, []);
 
   // ---- render --------------------------------------------------------------
@@ -281,16 +309,58 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Status badge & Demo button */}
+          {/* Archetype Selector & Status badge */}
           <div className="flex items-center gap-2">
+            {/* Instant Archetype Switcher */}
+            <div className="hidden sm:flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl p-0.5">
+              <button
+                type="button"
+                onClick={() => handleLoadArchetype('villa')}
+                disabled={isProcessing}
+                className={`text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${
+                  selectedArchetype === 'villa' && hasAnalysis
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-300 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                🏡 Villa (122m²)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleLoadArchetype('loft')}
+                disabled={isProcessing}
+                className={`text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${
+                  selectedArchetype === 'loft' && hasAnalysis
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-300 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                🏙️ Loft (74m²)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleLoadArchetype('eco_cabin')}
+                disabled={isProcessing}
+                className={`text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${
+                  selectedArchetype === 'eco_cabin' && hasAnalysis
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-300 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                🌲 Cabin (42m²)
+              </button>
+            </div>
+
+            {/* Mobile simplified sample button */}
             <button
               type="button"
-              onClick={handleLoadDemo}
+              onClick={() => handleLoadArchetype('villa')}
               disabled={isProcessing}
-              className="text-xs bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 font-medium disabled:opacity-50"
+              className="sm:hidden text-xs bg-blue-600/20 text-blue-300 border border-blue-500/30 px-2.5 py-1.5 rounded-lg"
             >
-              <span>⚡</span> Try Prebuilt Sample
+              ⚡ Demo
             </button>
+
             {isProcessing && (
               <span className="flex items-center gap-1.5 text-xs text-[var(--accent)] bg-[var(--accent-muted)] px-3 py-1 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
@@ -338,7 +408,14 @@ export default function Home() {
             {/* Pipeline Progress */}
             {pipeline.stage !== 'idle' && <PipelineProgress progress={pipeline} />}
 
-            {viewer.analysis && <PlanAssistant key={viewer.analysis.id} analysis={viewer.analysis} onSelect={(id) => setViewer((prev) => ({ ...prev, selectedElement: id }))} />}
+            {viewer.analysis && (
+              <PlanAssistant
+                key={viewer.analysis.id}
+                analysis={viewer.analysis}
+                onSelect={(id) => setViewer((prev) => ({ ...prev, selectedElement: id }))}
+              />
+            )}
+
             {/* View Controls */}
             {hasAnalysis && (
               <ViewControls
@@ -351,12 +428,18 @@ export default function Home() {
                 showDimensions={viewer.showDimensions}
                 showRoof={viewer.showRoof}
                 showFurniture={viewer.showFurniture}
+                isMeasuring={isMeasuring}
+                showMinimap={showMinimap}
+                isSoundEnabled={isSoundEnabled}
                 currentFloor={viewer.currentFloor}
                 totalFloors={totalFloors}
                 onViewModeChange={(mode) => setViewer((prev) => ({ ...prev, viewMode: mode }))}
-                onLightingChange={setLightingMode}
+                onLightingChange={handleLightingChange}
                 onFlooringChange={setFlooringPreset}
                 onToggleSolarStudy={handleToggleSolarStudy}
+                onToggleMeasuring={() => setIsMeasuring((p) => !p)}
+                onToggleMinimap={() => setShowMinimap((p) => !p)}
+                onToggleSound={handleToggleSound}
                 onToggleRoof={() => setViewer((prev) => ({ ...prev, showRoof: !prev.showRoof }))}
                 onToggleFurniture={() => setViewer((prev) => ({ ...prev, showFurniture: !prev.showFurniture }))}
                 onToggleWireframe={() =>
@@ -395,29 +478,33 @@ export default function Home() {
               showDimensions={viewer.showDimensions}
               showRoof={viewer.showRoof}
               showFurniture={viewer.showFurniture}
+              isMeasuring={isMeasuring}
+              showMinimap={showMinimap}
+              isSoundEnabled={isSoundEnabled}
               selectedElement={viewer.selectedElement}
               onElementClick={(id) => setViewer((prev) => ({ ...prev, selectedElement: id }))}
+              onToggleMeasuring={() => setIsMeasuring((p) => !p)}
+              onToggleMinimap={() => setShowMinimap((p) => !p)}
+              onToggleSound={handleToggleSound}
             />
           ) : (
-            /* Placeholder when no analysis */
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="text-center space-y-4 max-w-sm px-6">
-                {/* Blueprint illustration */}
-                <div className="relative mx-auto w-28 h-28">
-                  <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-[var(--border)] rotate-6" />
-                  <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-[var(--border)] -rotate-3" />
-                  <div className="absolute inset-0 rounded-3xl bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center">
+            /* Enhanced 3-Archetype Showcase Grid when no floor plan is loaded */
+            <div className="w-full h-full flex items-center justify-center p-6">
+              <div className="text-center space-y-6 max-w-lg">
+                <div className="relative mx-auto w-24 h-24">
+                  <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-[var(--border)] rotate-6" />
+                  <div className="absolute inset-0 rounded-3xl bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center shadow-xl">
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
-                      width="40"
-                      height="40"
+                      width="38"
+                      height="38"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
                       strokeWidth="1.5"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      className="text-[var(--text-muted)]"
+                      className="text-blue-400"
                     >
                       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                       <polyline points="9 22 9 12 15 12 15 22" />
@@ -426,28 +513,73 @@ export default function Home() {
                 </div>
 
                 <div>
-                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-                    Upload a Floor Plan
+                  <h2 className="text-xl font-bold text-gradient">
+                    Architectural Blueprint to 3D Digital Twin
                   </h2>
-                  <p className="text-sm text-[var(--text-muted)] mt-2 leading-relaxed">
-                    Drop a 2D floor plan, blueprint, or architectural drawing. Our AI pipeline
-                    will analyze it and generate an interactive 3D model with estimated dimensions.
+                  <p className="text-xs text-[var(--text-muted)] mt-2 leading-relaxed">
+                    Upload an architectural floor plan or select a preloaded archetype to inspect
+                    with dynamic solar heliodon, first-person WASD navigation, and WebXR AR.
                   </p>
+                </div>
+
+                {/* 3 Archetype Interactive Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
                   <button
                     type="button"
-                    onClick={handleLoadDemo}
-                    className="mt-4 inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg shadow-blue-500/25 transition-all hover:scale-105"
+                    onClick={() => handleLoadArchetype('villa')}
+                    className="group glass-strong hover:border-blue-500/50 p-3 rounded-2xl border border-white/10 transition-all hover:scale-[1.02] shadow-lg text-left"
                   >
-                    <span>⚡</span> Load Prebuilt Sample
+                    <span className="text-2xl block mb-1">🏡</span>
+                    <h3 className="text-xs font-semibold text-white group-hover:text-blue-400 transition-colors">
+                      Nordic Villa
+                    </h3>
+                    <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+                      122.4 m² • 4 Bed • 2 Bath • Covered Terrace
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleLoadArchetype('loft')}
+                    className="group glass-strong hover:border-blue-500/50 p-3 rounded-2xl border border-white/10 transition-all hover:scale-[1.02] shadow-lg text-left"
+                  >
+                    <span className="text-2xl block mb-1">🏙️</span>
+                    <h3 className="text-xs font-semibold text-white group-hover:text-blue-400 transition-colors">
+                      Urban Loft
+                    </h3>
+                    <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+                      74.2 m² • High Ceilings • Island • Balcony
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleLoadArchetype('eco_cabin')}
+                    className="group glass-strong hover:border-blue-500/50 p-3 rounded-2xl border border-white/10 transition-all hover:scale-[1.02] shadow-lg text-left"
+                  >
+                    <span className="text-2xl block mb-1">🌲</span>
+                    <h3 className="text-xs font-semibold text-white group-hover:text-blue-400 transition-colors">
+                      Eco-Cabin
+                    </h3>
+                    <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+                      42.5 m² • Wood Hearth • Spa Bath • Deck
+                    </p>
                   </button>
                 </div>
 
-                <div className="flex items-center justify-center gap-4 text-[10px] text-[var(--text-muted)]">
+                <div className="flex items-center justify-center gap-4 text-[10px] text-[var(--text-muted)] pt-2">
                   <span className="flex items-center gap-1">
-                    <span className="w-1 h-1 rounded-full bg-blue-400" />
-                    Muse Spark
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                    Meta Muse Spark 1.3
                   </span>
-
+                  <span className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    WebXR Spatial AR
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                    AutoCAD DXF
+                  </span>
                 </div>
               </div>
             </div>
@@ -467,6 +599,7 @@ export default function Home() {
               </div>
             </div>
           )}
+
           {/* Architecture Inspector Drawer */}
           <ArchitectureInspector
             analysis={viewer.analysis}
@@ -474,6 +607,8 @@ export default function Home() {
             onClose={() => setIsInspectorOpen(false)}
             onSelectRoom={(roomId) => setViewer((prev) => ({ ...prev, selectedElement: roomId }))}
           />
+
+          {/* Dynamic Solar Study Floating Controls */}
           {hasAnalysis && isSolarStudyOpen && (
             <div className="absolute top-4 right-4 z-20">
               <SolarStudyControl
@@ -483,6 +618,8 @@ export default function Home() {
               />
             </div>
           )}
+
+          {/* WebXR & Mobile AR QR Modal */}
           <ARModal
             isOpen={isARModalOpen}
             onClose={() => setIsARModalOpen(false)}

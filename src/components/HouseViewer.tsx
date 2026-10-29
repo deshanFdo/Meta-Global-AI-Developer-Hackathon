@@ -1,13 +1,16 @@
 'use client';
 
-import React, { Suspense, useEffect, useRef } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Grid } from '@react-three/drei';
+import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import type { HouseAnalysis, GeneratedTextures, ViewerState, FlooringPreset, SolarStudySettings } from '@/types';
 import HouseModel from './HouseModel';
 import DimensionOverlay from './DimensionOverlay';
 import WalkthroughControls from './WalkthroughControls';
+import Minimap from './Minimap';
+import MeasurementTool, { type MeasurementRecord } from './MeasurementTool';
 import { calculateSolarPosition } from '@/lib/solar-calculator';
 
 interface HouseViewerProps {
@@ -22,9 +25,40 @@ interface HouseViewerProps {
   showDimensions: boolean;
   showRoof: boolean;
   showFurniture: boolean;
+  isMeasuring?: boolean;
+  showMinimap?: boolean;
+  isSoundEnabled?: boolean;
   selectedElement: string | null;
   onElementClick?: (id: string) => void;
   onExportRef?: (exportFn: () => void) => void;
+  onToggleMeasuring?: () => void;
+  onToggleMinimap?: () => void;
+  onToggleSound?: () => void;
+}
+
+// Throttled camera tracker to feed 2D Minimap player position and FOV orientation
+function CameraTracker({
+  onUpdate,
+}: {
+  onUpdate: (pos: [number, number, number], dir: [number, number]) => void;
+}) {
+  const { camera } = useThree();
+  const dir = useRef(new THREE.Vector3());
+  const lastUpdate = useRef(0);
+
+  useFrame((state) => {
+    const now = state.clock.getElapsedTime();
+    if (now - lastUpdate.current > 0.05) {
+      lastUpdate.current = now;
+      camera.getWorldDirection(dir.current);
+      onUpdate(
+        [camera.position.x, camera.position.y, camera.position.z],
+        [dir.current.x, dir.current.z]
+      );
+    }
+  });
+
+  return null;
 }
 
 // Controller to animate / adjust camera depending on selected ViewMode
@@ -64,11 +98,9 @@ function CameraController({
       camera.position.set(size * 1.1, size * 0.3, 0);
       camera.lookAt(0, 0, 0);
     } else if (viewMode === 'first-person') {
-      // First-person walkthrough: Human eye-height (1.65m) inside Living Room looking toward Terrace
       camera.position.set(-1.0, 1.65, 1.0);
       camera.lookAt(1.5, 1.65, 2.5);
     } else {
-      // Perspective default
       camera.position.set(size * 0.9, size * 0.8, size * 1.0);
       camera.lookAt(0, 0, 0);
     }
@@ -93,7 +125,7 @@ function CameraController({
       makeDefault
       enableDamping
       dampingFactor={0.05}
-      maxPolarAngle={viewMode === 'top' ? Math.PI / 2 : Math.PI / 2 - 0.02} // don't go below ground
+      maxPolarAngle={viewMode === 'top' ? Math.PI / 2 : Math.PI / 2 - 0.02}
       minDistance={viewMode === 'first-person' ? 0.1 : 2}
       maxDistance={viewMode === 'first-person' ? 40 : 100}
     />
@@ -112,10 +144,24 @@ export default function HouseViewer({
   showDimensions,
   showRoof,
   showFurniture,
+  isMeasuring = false,
+  showMinimap = true,
+  isSoundEnabled = false,
   selectedElement,
   onElementClick,
+  onToggleMeasuring,
+  onToggleMinimap,
+  onToggleSound,
 }: HouseViewerProps) {
-  const [teleportTarget, setTeleportTarget] = React.useState<[number, number, number] | null>(null);
+  const [teleportTarget, setTeleportTarget] = useState<[number, number, number] | null>(null);
+  const [playerTransform, setPlayerTransform] = useState<{
+    pos: [number, number, number];
+    dir: [number, number];
+  }>({
+    pos: [0, 1.65, 0],
+    dir: [0, 1],
+  });
+  const [measurements, setMeasurements] = useState<MeasurementRecord[]>([]);
 
   if (!analysis) return null;
 
@@ -153,7 +199,6 @@ export default function HouseViewer({
           {/* ======================================================== */}
           {solar ? (
             <>
-              {/* Dynamic Sun Light calculated from Heliodon Altitude & Azimuth */}
               <ambientLight intensity={solar.isNight ? 0.2 : 0.6} color={solar.isNight ? '#152035' : '#EEF4FF'} />
               <directionalLight
                 position={solar.position3D}
@@ -170,7 +215,6 @@ export default function HouseViewer({
               />
               {solar.isNight ? (
                 <>
-                  {/* Interior Recessed LED Lighting */}
                   <pointLight position={[0, 2.5, 1.5]} intensity={2.0} distance={8} color="#ffe2a0" />
                   <pointLight position={[-5.3, 2.5, -4.2]} intensity={1.5} distance={6} color="#ffd690" />
                   <pointLight position={[4.8, 2.5, -4.2]} intensity={1.5} distance={6} color="#ffd690" />
@@ -255,6 +299,17 @@ export default function HouseViewer({
             active={viewMode === 'first-person'}
           />
 
+          {/* Camera Tracker for 2D Minimap and HUD */}
+          <CameraTracker onUpdate={(pos, dir) => setPlayerTransform({ pos, dir })} />
+
+          {/* Interactive 3D Laser Dimension / Tape Measure Tool */}
+          <MeasurementTool
+            active={isMeasuring}
+            measurements={measurements}
+            onAddMeasurement={(record) => setMeasurements((prev) => [...prev, record])}
+            onRemoveMeasurement={(id) => setMeasurements((prev) => prev.filter((m) => m.id !== id))}
+          />
+
           {/* 3D House Model with PBR Procedural Textures */}
           <HouseModel
             analysis={analysis}
@@ -300,6 +355,96 @@ export default function HouseViewer({
         </div>
       </div>
 
+      {/* Floating Measurement Status HUD */}
+      {(isMeasuring || measurements.length > 0) && (
+        <div className="absolute top-16 left-4 z-20 glass-strong rounded-2xl p-2.5 border border-amber-500/30 shadow-2xl flex items-center gap-2.5 text-xs animate-fade-in-up">
+          <div className="flex items-center gap-1.5 font-semibold text-amber-300">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            <span>Laser Measure</span>
+          </div>
+          <span className="text-[10px] text-gray-300 hidden sm:inline">
+            {isMeasuring ? 'Click surface to set Point A, then Point B' : `${measurements.length} recorded`}
+          </span>
+          {measurements.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setMeasurements([])}
+              className="px-2 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 text-[10px] font-medium transition-colors"
+            >
+              Clear All ({measurements.length})
+            </button>
+          )}
+          {onToggleMeasuring && (
+            <button
+              type="button"
+              onClick={onToggleMeasuring}
+              className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-gray-200 text-[10px] font-medium transition-colors"
+            >
+              {isMeasuring ? 'Done' : 'Measure'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Floating Quick Action Icons (Sound & Measure & Minimap) */}
+      <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+        {onToggleSound && (
+          <button
+            type="button"
+            onClick={onToggleSound}
+            className={`p-2 rounded-xl text-xs font-medium border transition-all ${
+              isSoundEnabled
+                ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-500/30'
+                : 'glass-strong border-white/10 text-gray-300 hover:text-white'
+            }`}
+            title={isSoundEnabled ? 'Mute Spatial Audio' : 'Enable Spatial Audio'}
+          >
+            {isSoundEnabled ? '🔊 Sound On' : '🔇 Audio'}
+          </button>
+        )}
+        {onToggleMeasuring && (
+          <button
+            type="button"
+            onClick={onToggleMeasuring}
+            className={`p-2 rounded-xl text-xs font-medium border transition-all ${
+              isMeasuring
+                ? 'bg-amber-600 border-amber-400 text-white shadow-lg shadow-amber-500/30'
+                : 'glass-strong border-white/10 text-gray-300 hover:text-white'
+            }`}
+            title="Toggle Laser Tape Measure"
+          >
+            📏 Ruler
+          </button>
+        )}
+        {onToggleMinimap && (
+          <button
+            type="button"
+            onClick={onToggleMinimap}
+            className={`p-2 rounded-xl text-xs font-medium border transition-all ${
+              showMinimap
+                ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-500/30'
+                : 'glass-strong border-white/10 text-gray-300 hover:text-white'
+            }`}
+            title="Toggle 2D Radar Minimap"
+          >
+            🗺️ Radar
+          </button>
+        )}
+      </div>
+
+      {/* 2D Architectural Minimap Overlay */}
+      {showMinimap && (
+        <div className="absolute bottom-6 left-6 z-20">
+          <Minimap
+            analysis={analysis}
+            playerPos={playerTransform.pos}
+            playerDir={playerTransform.dir}
+            onTeleport={(target) => setTeleportTarget(target)}
+            onSelectRoom={onElementClick}
+          />
+        </div>
+      )}
+
       {/* Floating Room Teleporter Quick-Nav (when in Walk mode) */}
       {viewMode === 'first-person' && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 glass-strong rounded-2xl p-1.5 border border-white/10 shadow-2xl flex items-center gap-1 overflow-x-auto max-w-[90vw]">
@@ -323,7 +468,9 @@ export default function HouseViewer({
       {/* Camera / Navigation hint badge */}
       <div className="absolute bottom-4 right-4 pointer-events-none glass-subtle rounded-lg px-2.5 py-1 text-[11px] text-gray-400 border border-white/5">
         {viewMode === 'first-person'
-          ? 'WASD / Arrow Keys: Walk | Mouse: Look Around'
+          ? 'WASD / Arrow Keys: Walk | Mouse: Look Around | Click minimap to jump'
+          : isMeasuring
+          ? 'Tape Measure active: Click point A, then click point B'
           : 'Left Click: Rotate | Right Click: Pan | Scroll: Zoom'}
       </div>
     </div>

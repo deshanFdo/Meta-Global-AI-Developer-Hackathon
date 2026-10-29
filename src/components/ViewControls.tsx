@@ -19,12 +19,18 @@ interface ViewControlsProps {
   showDimensions: boolean;
   showRoof: boolean;
   showFurniture: boolean;
+  isMeasuring?: boolean;
+  showMinimap?: boolean;
+  isSoundEnabled?: boolean;
   currentFloor: number;
   totalFloors: number;
   onViewModeChange: (mode: ViewMode) => void;
   onLightingChange?: (mode: 'day' | 'golden_hour' | 'night') => void;
   onFlooringChange?: (preset: FlooringPreset) => void;
   onToggleSolarStudy?: () => void;
+  onToggleMeasuring?: () => void;
+  onToggleMinimap?: () => void;
+  onToggleSound?: () => void;
   onToggleWireframe: () => void;
   onToggleLabels: () => void;
   onToggleDimensions: () => void;
@@ -87,12 +93,18 @@ export default function ViewControls({
   showDimensions,
   showRoof,
   showFurniture,
+  isMeasuring = false,
+  showMinimap = true,
+  isSoundEnabled = false,
   currentFloor,
   totalFloors,
   onViewModeChange,
   onLightingChange,
   onFlooringChange,
   onToggleSolarStudy,
+  onToggleMeasuring,
+  onToggleMinimap,
+  onToggleSound,
   onToggleWireframe,
   onToggleLabels,
   onToggleDimensions,
@@ -300,6 +312,30 @@ export default function ViewControls({
               onClick={onToggleSolarStudy}
               label="Solar Study"
               icon={<span>☀️</span>}
+            />
+          )}
+          {onToggleMeasuring && (
+            <ToggleButton
+              active={isMeasuring}
+              onClick={onToggleMeasuring}
+              label={isMeasuring ? 'Laser: ON' : 'Laser Measure'}
+              icon={<span>📏</span>}
+            />
+          )}
+          {onToggleMinimap && (
+            <ToggleButton
+              active={showMinimap}
+              onClick={onToggleMinimap}
+              label={showMinimap ? 'Minimap: ON' : 'Minimap: OFF'}
+              icon={<span>🗺️</span>}
+            />
+          )}
+          {onToggleSound && (
+            <ToggleButton
+              active={isSoundEnabled}
+              onClick={onToggleSound}
+              label={isSoundEnabled ? 'Audio: ON' : 'Audio: OFF'}
+              icon={<span>{isSoundEnabled ? '🔊' : '🔇'}</span>}
             />
           )}
         </div>

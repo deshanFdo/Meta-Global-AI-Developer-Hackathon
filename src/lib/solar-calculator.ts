@@ -97,3 +97,4 @@ export function calculateSolarPosition(settings: SolarStudySettings): SolarPosit
     shadingActive,
   };
 }
+

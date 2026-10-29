@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { HouseAnalysis } from '@/types';
+import { soundscape } from '@/lib/soundscape';
 
 interface WalkthroughControlsProps {
   analysis: HouseAnalysis;
@@ -76,6 +77,7 @@ export default function WalkthroughControls({ analysis, active }: WalkthroughCon
     if (moveVector.lengthSq() > 0) {
       moveVector.normalize().multiplyScalar(moveSpeed);
       camera.position.add(moveVector);
+      soundscape.playFootstep();
 
       // Boundary clamp to prevent falling outside the house lot
       const halfW = (analysis.metadata.overallWidth / 2) - 0.4;
