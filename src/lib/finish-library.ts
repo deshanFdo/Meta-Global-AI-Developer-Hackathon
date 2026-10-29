@@ -121,6 +121,134 @@ function drawTerracottaTile(ctx: CanvasRenderingContext2D, s: number) {
   }
 }
 
+// Architectural Spanish Terracotta Barrel Roof Tiles
+function drawTerracottaRoofTiles(ctx: CanvasRenderingContext2D, s: number) {
+  ctx.fillStyle = '#8A361E';
+  ctx.fillRect(0, 0, s, s);
+
+  const rows = 12;
+  const cols = 8;
+  const rh = s / rows;
+  const cw = s / cols;
+
+  for (let r = 0; r < rows; r++) {
+    const y = r * rh;
+    const stagger = (r % 2) * (cw / 2);
+    for (let c = -1; c <= cols; c++) {
+      const x = c * cw + stagger;
+
+      // Curved barrel tile gradient
+      const grad = ctx.createLinearGradient(x, y, x + cw, y);
+      grad.addColorStop(0, '#5A2010');
+      grad.addColorStop(0.3, '#A84C2E');
+      grad.addColorStop(0.65, '#C6643E');
+      grad.addColorStop(0.9, '#8D3A20');
+      grad.addColorStop(1, '#4A180C');
+
+      ctx.fillStyle = grad;
+      ctx.fillRect(x + 2, y + 2, cw - 4, rh - 3);
+
+      // Bottom overlap shadow
+      ctx.fillStyle = 'rgba(20, 5, 2, 0.45)';
+      ctx.fillRect(x + 2, y + rh - 4, cw - 4, 3);
+    }
+  }
+}
+
+// Architectural Nordic Charcoal Slate Shingles
+function drawSlateShingles(ctx: CanvasRenderingContext2D, s: number) {
+  ctx.fillStyle = '#23272E';
+  ctx.fillRect(0, 0, s, s);
+
+  const rows = 16;
+  const rh = s / rows;
+  const sw = 48;
+
+  for (let r = 0; r < rows; r++) {
+    const y = r * rh;
+    const offset = (r % 2) * 24;
+    for (let x = -sw; x < s + sw; x += sw) {
+      const tone = 28 + ((Math.abs(x * 7 + r * 13)) % 10);
+      ctx.fillStyle = `hsl(218, 12%, ${tone}%)`;
+      ctx.fillRect(x + offset, y, sw - 1.5, rh - 2);
+
+      // Chiseled bottom shadow edge
+      ctx.fillStyle = 'rgba(8, 10, 14, 0.6)';
+      ctx.fillRect(x + offset, y + rh - 2.5, sw - 1.5, 2);
+    }
+  }
+}
+
+// Architectural Concrete Plinth Foundation
+function drawConcretePlinth(ctx: CanvasRenderingContext2D, s: number) {
+  ctx.fillStyle = '#8E8E8C';
+  ctx.fillRect(0, 0, s, s);
+
+  const imgData = ctx.getImageData(0, 0, s, s);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const n = ((i * 17) % 25) - 12;
+    d[i] = Math.min(255, Math.max(0, d[i] + n));
+    d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + n));
+    d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + n));
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  // Formwork seams
+  ctx.strokeStyle = 'rgba(50, 50, 50, 0.3)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, s / 2);
+  ctx.lineTo(s, s / 2);
+  ctx.stroke();
+}
+
+// Architectural Large-Format Stone Pavers (Terrace)
+function drawTerracePavers(ctx: CanvasRenderingContext2D, s: number) {
+  ctx.fillStyle = '#D4D0C8';
+  ctx.fillRect(0, 0, s, s);
+
+  const slabs = 4;
+  const sz = s / slabs;
+  ctx.strokeStyle = 'rgba(70, 65, 60, 0.5)';
+  ctx.lineWidth = 4;
+
+  for (let i = 0; i < slabs; i++) {
+    for (let j = 0; j < slabs; j++) {
+      const tone = 80 + (((i * 7 + j * 11) % 7) - 3);
+      ctx.fillStyle = `hsl(40, 8%, ${tone}%)`;
+      ctx.fillRect(i * sz + 2, j * sz + 2, sz - 4, sz - 4);
+    }
+  }
+
+  for (let i = 0; i <= slabs; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * sz, 0);
+    ctx.lineTo(i * sz, s);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, i * sz);
+    ctx.lineTo(s, i * sz);
+    ctx.stroke();
+  }
+}
+
+// Fine Landscaped Organic Lawn Grass
+function drawLawnApron(ctx: CanvasRenderingContext2D, s: number) {
+  ctx.fillStyle = '#3E6B2C';
+  ctx.fillRect(0, 0, s, s);
+
+  const imgData = ctx.getImageData(0, 0, s, s);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const variation = ((i * 31) % 40) - 20;
+    d[i] = Math.min(255, Math.max(0, 62 + variation * 0.4));
+    d[i + 1] = Math.min(255, Math.max(0, 107 + variation));
+    d[i + 2] = Math.min(255, Math.max(0, 44 + variation * 0.3));
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+
 // ---------------------------------------------------------------------------
 // Finish Catalog Types & Definitions
 // ---------------------------------------------------------------------------
@@ -221,6 +349,77 @@ export function getMaterialForTrimFinish(key: TrimFinishKey): THREE.MeshStandard
     color: finish.colorHex,
     roughness: finish.roughness,
     metalness: finish.metalness,
+  });
+}
+
+/**
+ * Returns a photorealistic PBR material for the Roof system.
+ */
+export function getMaterialForRoof(style: 'terracotta' | 'slate' | 'flat' = 'terracotta'): THREE.MeshStandardMaterial {
+  if (style === 'slate') {
+    return new THREE.MeshStandardMaterial({
+      color: '#262930',
+      map: getOrCreateCanvasTexture('slate_shingles', drawSlateShingles, 6),
+      roughness: 0.75,
+      metalness: 0.05,
+      side: THREE.DoubleSide,
+    });
+  }
+
+  if (style === 'flat') {
+    return new THREE.MeshStandardMaterial({
+      color: '#808285',
+      map: getOrCreateCanvasTexture('concrete_plinth', drawConcretePlinth, 4),
+      roughness: 0.85,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+    });
+  }
+
+  // Terracotta barrel tiles (default)
+  return new THREE.MeshStandardMaterial({
+    color: '#A04224',
+    map: getOrCreateCanvasTexture('terracotta_roof', drawTerracottaRoofTiles, 8),
+    roughness: 0.70,
+    metalness: 0.02,
+    side: THREE.DoubleSide,
+  });
+}
+
+/**
+ * Returns material for architectural concrete foundation plinth.
+ */
+export function getMaterialForPlinth(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color: '#8E8E8C',
+    map: getOrCreateCanvasTexture('concrete_plinth', drawConcretePlinth, 4),
+    roughness: 0.82,
+    metalness: 0.02,
+  });
+}
+
+/**
+ * Returns material for architectural outdoor stone pavers (terrace patio).
+ */
+export function getMaterialForTerrace(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color: '#D4D0C8',
+    map: getOrCreateCanvasTexture('terrace_pavers', drawTerracePavers, 4),
+    roughness: 0.65,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+  });
+}
+
+/**
+ * Returns material for perimeter landscaping lawn grass apron.
+ */
+export function getMaterialForLawn(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color: '#3E6B2C',
+    map: getOrCreateCanvasTexture('lawn_grass', drawLawnApron, 6),
+    roughness: 0.95,
+    metalness: 0.0,
   });
 }
 

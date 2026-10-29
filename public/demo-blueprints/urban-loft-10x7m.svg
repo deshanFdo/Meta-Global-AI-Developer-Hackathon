@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 740" width="1000" height="740" style="background:#ffffff; font-family:'Segoe UI',system-ui,sans-serif;">
+  <defs>
+    <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+      <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#f0f0f4" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1000" height="740" fill="url(#grid)" />
+
+  <!-- Title & Dimensions Header -->
+  <text x="500" y="45" font-size="22" font-weight="bold" text-anchor="middle" fill="#111827">Urban Industrial Loft - 74.0 m²</text>
+  <text x="500" y="68" font-size="12" text-anchor="middle" fill="#6b7280">Scale 1:50 | Dimensions in Millimeters (10 000 mm × 7 400 mm)</text>
+
+  <!-- Exterior Walls (Thick black double lines) -->
+  <rect x="100" y="90" width="800" height="560" fill="none" stroke="#111827" stroke-width="18" stroke-linejoin="miter" />
+
+  <!-- Interior Partitions -->
+  <!-- Bathroom Partition -->
+  <line x1="620" y1="90" x2="620" y2="350" stroke="#1f2937" stroke-width="10" />
+  <line x1="620" y1="350" x2="900" y2="350" stroke="#1f2937" stroke-width="10" />
+
+  <!-- Bedroom Glass Partition Wall -->
+  <line x1="100" y1="390" x2="480" y2="390" stroke="#3b82f6" stroke-width="6" stroke-dasharray="16,6" />
+
+  <!-- Windows (Triple lines) -->
+  <!-- South Glass Curtain Wall (Living) -->
+  <line x1="200" y1="650" x2="520" y2="650" stroke="#0284c7" stroke-width="6" />
+  <line x1="200" y1="644" x2="520" y2="644" stroke="#0284c7" stroke-width="2" />
+  <line x1="200" y1="656" x2="520" y2="656" stroke="#0284c7" stroke-width="2" />
+
+  <!-- North Bedroom Window -->
+  <line x1="180" y1="90" x2="380" y2="90" stroke="#0284c7" stroke-width="6" />
+
+  <!-- Doors with Swing Arcs -->
+  <!-- Entry Door (West Wall) -->
+  <line x1="100" y1="480" x2="160" y2="480" stroke="#10b981" stroke-width="4" />
+  <path d="M 160 480 A 60 60 0 0 1 100 540" fill="none" stroke="#10b981" stroke-width="2" stroke-dasharray="4,4" />
+
+  <!-- Bathroom Door -->
+  <line x1="620" y1="260" x2="620" y2="320" stroke="#10b981" stroke-width="4" />
+  <path d="M 620 260 A 60 60 0 0 0 680 320" fill="none" stroke="#10b981" stroke-width="2" stroke-dasharray="4,4" />
+
+  <!-- Furniture & Fixtures -->
+  <!-- Kitchen Island -->
+  <rect x="540" y="440" width="220" height="80" fill="#f3f4f6" stroke="#4b5563" stroke-width="3" rx="4" />
+  <circle cx="580" cy="480" r="14" fill="none" stroke="#6b7280" stroke-width="2" />
+  <circle cx="630" cy="480" r="14" fill="none" stroke="#6b7280" stroke-width="2" />
+  <rect x="680" y="460" width="50" height="40" fill="none" stroke="#6b7280" stroke-width="2" />
+
+  <!-- Living Room Sectional Sofa -->
+  <path d="M 240 560 L 420 560 L 420 460" fill="none" stroke="#4b5563" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- King Bed -->
+  <rect x="180" y="160" width="160" height="180" fill="#f8fafc" stroke="#334155" stroke-width="3" rx="4" />
+  <rect x="200" y="170" width="50" height="30" fill="#e2e8f0" stroke="#64748b" stroke-width="1.5" />
+  <rect x="270" y="170" width="50" height="30" fill="#e2e8f0" stroke="#64748b" stroke-width="1.5" />
+
+  <!-- Bathroom Vanity & Tub -->
+  <rect x="740" y="130" width="120" height="60" fill="#e0f2fe" stroke="#0369a1" stroke-width="2" rx="10" />
+  <rect x="660" y="130" width="60" height="45" fill="#f1f5f9" stroke="#475569" stroke-width="2" />
+
+  <!-- Room Labels & Metric Areas -->
+  <g fill="#1e293b" text-anchor="middle">
+    <text x="320" y="490" font-size="18" font-weight="bold">Living &amp; Dining Loft</text>
+    <text x="320" y="512" font-size="13" fill="#64748b">A: 38.40 m²</text>
+
+    <text x="260" y="270" font-size="16" font-weight="bold">Primary Bedroom</text>
+    <text x="260" y="290" font-size="12" fill="#64748b">A: 22.80 m²</text>
+
+    <text x="760" y="270" font-size="15" font-weight="bold">Luxury Bath</text>
+    <text x="760" y="290" font-size="12" fill="#64748b">A: 12.80 m²</text>
+  </g>
+
+  <!-- Metric Dimension Chains -->
+  <g stroke="#dc2626" stroke-width="1.5" fill="#dc2626" font-size="11" text-anchor="middle">
+    <!-- Horizontal Dimension Top -->
+    <line x1="100" y1="80" x2="900" y2="80" />
+    <line x1="100" y1="73" x2="100" y2="87" />
+    <line x1="900" y1="73" x2="900" y2="87" />
+    <text x="500" y="76" stroke="none">10 000 mm</text>
+
+    <!-- Vertical Dimension Right -->
+    <line x1="915" y1="90" x2="915" y2="650" />
+    <line x1="908" y1="90" x2="922" y2="90" />
+    <line x1="908" y1="650" x2="922" y2="650" />
+    <text x="940" y="375" stroke="none" transform="rotate(90 940 375)">7 400 mm</text>
+  </g>
+</svg>

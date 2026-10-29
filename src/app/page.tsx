@@ -58,7 +58,7 @@ const INITIAL_VIEWER: ViewerState = {
   showLabels: true,
   showDimensions: false,
   showWireframe: false,
-  showRoof: false, // Start in Dollhouse cutaway mode so interior rooms & furniture are visible!
+  showRoof: true, // Roof visible by default with gable/hip geometry; toggled off via Roof button or Dollhouse cutaway
   showFurniture: true,
   currentFloor: 0,
 };

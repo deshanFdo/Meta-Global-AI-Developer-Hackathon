@@ -12,6 +12,12 @@ import type {
 } from '@/types';
 import { FurnitureGenerator } from './furniture-generator';
 import { ProceduralTextureGenerator } from './texture-generator';
+import {
+  getMaterialForRoof,
+  getMaterialForPlinth,
+  getMaterialForTerrace,
+  getMaterialForLawn,
+} from './finish-library';
 
 // ============================================
 // Material palette keyed by semantic type
@@ -129,7 +135,7 @@ export class GeometryEngine {
       house.add(roofGroup);
     }
 
-    const ground = this.generateGround();
+    const ground = this.generateGround(analysis);
     house.add(ground);
 
     // Enable shadow casting on all meshes
@@ -628,8 +634,13 @@ export class GeometryEngine {
     const w = metadata.overallWidth + roof.overhang * 2;
     const d = metadata.overallDepth + roof.overhang * 2;
     const baseY = metadata.wallHeight * metadata.floors;
-    const color = roof.color || ROOF_COLORS[roof.material] || '#606060';
-    const mat = this.createMaterial('roof', color);
+    const roofStyle: 'terracotta' | 'slate' | 'flat' =
+      roof.type === 'flat'
+        ? 'flat'
+        : roof.material === 'asphalt_shingle' || roof.material === 'slate'
+        ? 'slate'
+        : 'terracotta';
+    const mat = getMaterialForRoof(roofStyle);
 
     switch (roof.type) {
       case 'flat':
@@ -790,15 +801,29 @@ export class GeometryEngine {
     baseY: number,
     mat: THREE.Material,
     name: string,
+    w?: number,
+    d?: number,
   ): void {
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(verts, 3));
     geom.setIndex(indices);
+
+    // Compute explicit UV coordinates so procedural textures map seamlessly
+    const uvs = new Float32Array((verts.length / 3) * 2);
+    const boxW = Math.max(w || 12, 1);
+    const boxD = Math.max(d || 10, 1);
+    for (let i = 0; i < verts.length / 3; i++) {
+      uvs[i * 2] = (verts[i * 3] + boxW / 2) / boxW;
+      uvs[i * 2 + 1] = (verts[i * 3 + 2] + boxD / 2) / boxD;
+    }
+    geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     geom.computeVertexNormals();
 
     const mesh = new THREE.Mesh(geom, mat);
     mesh.position.y = baseY;
     mesh.name = name;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     group.add(mesh);
   }
 
@@ -826,23 +851,86 @@ export class GeometryEngine {
   // Ground
   // ==================================================
 
-  generateGround(): THREE.Mesh {
-    const size = 60;
-    const geom = new THREE.PlaneGeometry(size, size);
-    geom.rotateX(-Math.PI / 2);
+  generateGround(analysis?: HouseAnalysis): THREE.Group {
+    const group = new THREE.Group();
+    group.name = 'ground_and_site_envelope';
 
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x4a7c3f,
-      roughness: 0.95,
-      metalness: 0.0,
-      side: THREE.DoubleSide,
-    });
+    // 1. Manicured landscaped lawn grass apron
+    const lawnSize = 80;
+    const lawnGeom = new THREE.PlaneGeometry(lawnSize, lawnSize);
+    lawnGeom.rotateX(-Math.PI / 2);
+    const lawnMat = getMaterialForLawn();
+    const lawn = new THREE.Mesh(lawnGeom, lawnMat);
+    lawn.position.y = -0.15;
+    lawn.receiveShadow = true;
+    lawn.name = 'ground_lawn';
+    group.add(lawn);
 
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.position.y = -0.01;
-    mesh.receiveShadow = true;
-    mesh.name = 'ground';
-    return mesh;
+    const overallW = analysis?.metadata.overallWidth || 15;
+    const overallD = analysis?.metadata.overallDepth || 12;
+
+    // 2. Architectural Concrete Foundation Plinth (0.15m height under exterior footprint)
+    const plinthW = overallW + 0.35;
+    const plinthD = overallD + 0.35;
+    const plinthH = 0.15;
+    const plinthGeom = new THREE.BoxGeometry(plinthW, plinthH, plinthD);
+    const plinthMat = getMaterialForPlinth();
+    const plinth = new THREE.Mesh(plinthGeom, plinthMat);
+    plinth.position.set(0, -plinthH / 2, 0);
+    plinth.receiveShadow = true;
+    plinth.castShadow = true;
+    plinth.name = 'foundation_concrete_plinth';
+    group.add(plinth);
+
+    // 3. Outdoor Terrace / Patio Pavers (large-format stone tiles)
+    // If the plan has patio/terrace rooms, create paved outdoor slabs
+    const terraceRooms = analysis?.rooms.filter(
+      (r) =>
+        r.type === 'patio' ||
+        r.type === 'porch' ||
+        r.type === 'balcony' ||
+        r.name.toLowerCase().includes('terrace')
+    ) || [];
+
+    if (terraceRooms.length > 0) {
+      for (const tRoom of terraceRooms) {
+        if (tRoom.vertices && tRoom.vertices.length >= 3) {
+          const shape = new THREE.Shape();
+          const first = tRoom.vertices[0];
+          shape.moveTo(first.x - this.centerOffsetX, first.y - this.centerOffsetZ);
+          for (let i = 1; i < tRoom.vertices.length; i++) {
+            const v = tRoom.vertices[i];
+            shape.lineTo(v.x - this.centerOffsetX, v.y - this.centerOffsetZ);
+          }
+          shape.closePath();
+
+          const slabGeom = new THREE.ExtrudeGeometry(shape, {
+            depth: 0.08,
+            bevelEnabled: false,
+          });
+          slabGeom.rotateX(Math.PI / 2);
+          const terraceMat = getMaterialForTerrace();
+          const slabMesh = new THREE.Mesh(slabGeom, terraceMat);
+          slabMesh.position.y = 0.02;
+          slabMesh.receiveShadow = true;
+          slabMesh.name = `terrace_slab_${tRoom.id}`;
+          group.add(slabMesh);
+        }
+      }
+    } else {
+      // Default welcoming South terrace patio slab (e.g. 6.6m x 2.8m along South exterior wall)
+      const patioW = Math.min(overallW * 0.45, 6.8);
+      const patioD = 2.6;
+      const patioGeom = new THREE.BoxGeometry(patioW, 0.06, patioD);
+      const terraceMat = getMaterialForTerrace();
+      const patioMesh = new THREE.Mesh(patioGeom, terraceMat);
+      patioMesh.position.set(0, -0.03, overallD / 2 + patioD / 2 - 0.1);
+      patioMesh.receiveShadow = true;
+      patioMesh.name = 'terrace_outdoor_patio';
+      group.add(patioMesh);
+    }
+
+    return group;
   }
 
   // ==================================================

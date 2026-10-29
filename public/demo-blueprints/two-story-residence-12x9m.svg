@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" width="1200" height="900" style="background:#ffffff; font-family:'Segoe UI',system-ui,sans-serif;">
+  <defs>
+    <pattern id="grid12" width="60" height="60" patternUnits="userSpaceOnUse">
+      <path d="M 60 0 L 0 0 0 60" fill="none" stroke="#f1f5f9" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="900" fill="url(#grid12)" />
+
+  <!-- Title & Header -->
+  <text x="600" y="50" font-size="24" font-weight="bold" text-anchor="middle" fill="#0f172a">Modern Two-Story Residence - 180.0 m²</text>
+  <text x="600" y="75" font-size="13" text-anchor="middle" fill="#64748b">Level 1 Ground Plan | Metric Dimensions: 12 000 mm × 9 000 mm</text>
+
+  <!-- Exterior Masonry Walls -->
+  <rect x="120" y="100" width="960" height="700" fill="none" stroke="#0f172a" stroke-width="20" stroke-linejoin="miter" />
+
+  <!-- Staircase Core to Level 2 -->
+  <rect x="520" y="320" width="160" height="240" fill="#f8fafc" stroke="#334155" stroke-width="4" />
+  <line x1="520" y1="360" x2="680" y2="360" stroke="#64748b" stroke-width="2" />
+  <line x1="520" y1="400" x2="680" y2="400" stroke="#64748b" stroke-width="2" />
+  <line x1="520" y1="440" x2="680" y2="440" stroke="#64748b" stroke-width="2" />
+  <line x1="520" y1="480" x2="680" y2="480" stroke="#64748b" stroke-width="2" />
+  <line x1="520" y1="520" x2="680" y2="520" stroke="#64748b" stroke-width="2" />
+  <line x1="600" y1="540" x2="600" y2="340" stroke="#dc2626" stroke-width="3" stroke-dasharray="8,4" />
+  <polygon points="600,330 594,345 606,345" fill="#dc2626" />
+  <text x="600" y="435" font-size="12" font-weight="bold" fill="#dc2626" text-anchor="middle">UP TO L2</text>
+
+  <!-- Interior Partitions -->
+  <!-- Kitchen/Dining to Living -->
+  <line x1="120" y1="420" x2="520" y2="420" stroke="#1e293b" stroke-width="12" />
+  <!-- Hallway & Powder Room -->
+  <line x1="680" y1="420" x2="1080" y2="420" stroke="#1e293b" stroke-width="12" />
+  <line x1="880" y1="100" x2="880" y2="420" stroke="#1e293b" stroke-width="10" />
+
+  <!-- Windows (Triple lines) -->
+  <!-- North Windows -->
+  <line x1="240" y1="100" x2="440" y2="100" stroke="#0284c7" stroke-width="6" />
+  <line x1="720" y1="100" x2="840" y2="100" stroke="#0284c7" stroke-width="6" />
+  <!-- South Sliding Glass Doors (Terrace) -->
+  <line x1="240" y1="800" x2="560" y2="800" stroke="#0284c7" stroke-width="8" />
+
+  <!-- Doors with Arcs -->
+  <line x1="120" y1="620" x2="190" y2="620" stroke="#10b981" stroke-width="4" />
+  <path d="M 190 620 A 70 70 0 0 1 120 690" fill="none" stroke="#10b981" stroke-width="2" stroke-dasharray="4,4" />
+
+  <!-- Room Labels -->
+  <g fill="#1e293b" text-anchor="middle">
+    <text x="320" y="260" font-size="18" font-weight="bold">Kitchen &amp; Dining Atelier</text>
+    <text x="320" y="285" font-size="13" fill="#64748b">A: 36.80 m²</text>
+
+    <text x="320" y="620" font-size="20" font-weight="bold">Double-Height Living Salon</text>
+    <text x="320" y="645" font-size="14" fill="#64748b">A: 48.20 m² (Open to Above)</text>
+
+    <text x="880" y="620" font-size="18" font-weight="bold">Guest Bedroom Suite</text>
+    <text x="880" y="645" font-size="13" fill="#64748b">A: 24.60 m²</text>
+
+    <text x="980" y="260" font-size="16" font-weight="bold">Executive Study</text>
+    <text x="980" y="285" font-size="12" fill="#64748b">A: 18.40 m²</text>
+  </g>
+
+  <!-- Metric Dimension Chains -->
+  <g stroke="#dc2626" stroke-width="1.8" fill="#dc2626" font-size="12" text-anchor="middle">
+    <!-- Top Horizontal -->
+    <line x1="120" y1="88" x2="1080" y2="88" />
+    <line x1="120" y1="80" x2="120" y2="96" />
+    <line x1="1080" y1="80" x2="1080" y2="96" />
+    <text x="600" y="84" stroke="none">12 000 mm</text>
+
+    <!-- Right Vertical -->
+    <line x1="1100" y1="100" x2="1100" y2="800" />
+    <line x1="1092" y1="100" x2="1108" y2="100" />
+    <line x1="1092" y1="800" x2="1108" y2="800" />
+    <text x="1125" y="450" stroke="none" transform="rotate(90 1125 450)">9 000 mm</text>
+  </g>
+</svg>
