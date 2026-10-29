@@ -517,6 +517,7 @@ export default function Home() {
               onToggleSound={handleToggleSound}
               onOpenFinishCustomizer={() => setIsFinishCustomizerOpen(true)}
               onToggleARScale={() => setArScale((s) => (s === 'real' ? 'tabletop' : 'real'))}
+              onExportDXF={handleExportDXF}
             />
           ) : (
             /* Enhanced 3-Archetype Showcase Grid when no floor plan is loaded */

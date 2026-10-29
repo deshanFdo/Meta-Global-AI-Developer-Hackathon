@@ -23,6 +23,7 @@ interface HouseModelProps {
   showFurniture: boolean;
   flooringPreset?: FlooringPreset;
   finishes?: FinishSelectionState;
+  clippingPlane?: THREE.Plane | null;
   selectedElement: string | null;
   onElementClick?: (id: string) => void;
 }
@@ -36,6 +37,7 @@ export default function HouseModel({
   showFurniture,
   flooringPreset,
   finishes,
+  clippingPlane,
   selectedElement,
   onElementClick,
 }: HouseModelProps) {
@@ -82,6 +84,22 @@ export default function HouseModel({
       }
     });
   }, [houseGroup, finishes, analysis.walls]);
+
+  // Apply horizontal clipping plane for 3D Dollhouse section cut
+  useEffect(() => {
+    houseGroup.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        for (const mat of mats) {
+          if (mat && typeof mat === 'object' && 'clippingPlanes' in mat) {
+            (mat as THREE.Material).clippingPlanes = clippingPlane ? [clippingPlane] : [];
+            (mat as THREE.Material).clipShadows = true;
+            (mat as THREE.Material).needsUpdate = true;
+          }
+        }
+      }
+    });
+  }, [houseGroup, clippingPlane]);
 
   // Update wireframe state and selection highlight across all meshes in the group
   useEffect(() => {

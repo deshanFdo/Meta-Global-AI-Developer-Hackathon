@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useEffect, useRef, useState, useCallback } from 'react';
+import React, { Suspense, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Grid } from '@react-three/drei';
 import * as THREE from 'three';
@@ -35,6 +35,7 @@ interface HouseViewerProps {
   selectedElement: string | null;
   onElementClick?: (id: string) => void;
   onExportRef?: (exportFn: () => void) => void;
+  onExportDXF?: () => void;
   onToggleMeasuring?: () => void;
   onToggleMinimap?: () => void;
   onToggleSound?: () => void;
@@ -158,6 +159,7 @@ export default function HouseViewer({
   arScale = 'real',
   selectedElement,
   onElementClick,
+  onExportDXF,
   onToggleMeasuring,
   onToggleMinimap,
   onToggleSound,
@@ -174,6 +176,12 @@ export default function HouseViewer({
   });
   const [measurements, setMeasurements] = useState<MeasurementRecord[]>([]);
   const [isXRPresenting, setIsXRPresenting] = useState(false);
+  const [isDollhouseCut, setIsDollhouseCut] = useState(false);
+  const [cutHeight, setCutHeight] = useState(1.2);
+  const cutPlane = useMemo(
+    () => (isDollhouseCut ? new THREE.Plane(new THREE.Vector3(0, -1, 0), cutHeight) : null),
+    [isDollhouseCut, cutHeight]
+  );
   const glRef = useRef<THREE.WebGLRenderer | null>(null);
 
   if (!analysis) return null;
@@ -220,7 +228,7 @@ export default function HouseViewer({
     <div id="xr-overlay" className="relative w-full h-full bg-[#0c0e14] overflow-hidden select-none">
       <Canvas
         shadows
-        gl={{ antialias: true, alpha: true }}
+        gl={{ antialias: true, alpha: true, localClippingEnabled: true }}
         camera={{
           position: [15, 12, 16],
           fov: 45,
@@ -229,6 +237,7 @@ export default function HouseViewer({
         }}
         onCreated={({ gl }) => {
           gl.xr.enabled = true;
+          gl.localClippingEnabled = true;
           glRef.current = gl;
         }}
         className="w-full h-full"
@@ -364,10 +373,11 @@ export default function HouseViewer({
             textures={textures}
             showWireframe={showWireframe}
             showLabels={showLabels}
-            showRoof={showRoof}
+            showRoof={showRoof && !isDollhouseCut}
             showFurniture={showFurniture}
             flooringPreset={flooringPreset}
             finishes={finishes}
+            clippingPlane={cutPlane}
             selectedElement={selectedElement}
             onElementClick={onElementClick}
           />
@@ -437,6 +447,33 @@ export default function HouseViewer({
 
       {/* Floating Quick Action Bar */}
       <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+        {/* 3D Dollhouse Section Cutaway Button */}
+        <button
+          type="button"
+          onClick={() => setIsDollhouseCut((prev) => !prev)}
+          className={`p-2 rounded-xl text-xs font-medium border transition-all flex items-center gap-1.5 shadow-md ${
+            isDollhouseCut
+              ? 'bg-amber-600 border-amber-400 text-white shadow-amber-500/30'
+              : 'border-white/10 glass-strong text-gray-300 hover:text-white'
+          }`}
+          title="Toggle 3D Dollhouse Section Cutaway Slider"
+        >
+          <span>🏠</span>
+          <span>Dollhouse Cut</span>
+        </button>
+
+        {onExportDXF && (
+          <button
+            type="button"
+            onClick={onExportDXF}
+            className="p-2 rounded-xl text-xs font-medium border border-blue-500/40 bg-blue-600/20 text-blue-200 hover:bg-blue-600 hover:text-white transition-all shadow-md shadow-blue-500/20 flex items-center gap-1.5"
+            title="Export AutoCAD / Revit ASCII DXF"
+          >
+            <span>📐</span>
+            <span>CAD DXF</span>
+          </button>
+        )}
+
         {onOpenFinishCustomizer && (
           <button
             type="button"
@@ -516,6 +553,67 @@ export default function HouseViewer({
           </button>
         )}
       </div>
+
+      {/* Floating 3D Dollhouse Section Cut Controller HUD */}
+      {isDollhouseCut && (
+        <div className="absolute top-16 right-4 z-20 glass-strong rounded-2xl p-3 border border-amber-500/40 shadow-2xl flex flex-col gap-2 min-w-[260px] animate-fade-in-up">
+          <div className="flex items-center justify-between text-xs font-semibold text-amber-300">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              <span>Section Cut Height</span>
+            </span>
+            <span className="font-mono text-white bg-white/10 px-2 py-0.5 rounded text-[11px]">
+              {cutHeight.toFixed(2)} m
+            </span>
+          </div>
+
+          <input
+            type="range"
+            min={0.4}
+            max={3.0}
+            step={0.05}
+            value={cutHeight}
+            onChange={(e) => setCutHeight(parseFloat(e.target.value))}
+            className="w-full accent-amber-400 cursor-pointer h-1.5 bg-white/20 rounded-lg appearance-none"
+          />
+
+          <div className="flex items-center justify-between gap-1 text-[10px]">
+            <button
+              type="button"
+              onClick={() => setCutHeight(1.2)}
+              className={`px-2 py-1 rounded-lg transition-colors ${
+                Math.abs(cutHeight - 1.2) < 0.05
+                  ? 'bg-amber-500 text-black font-semibold'
+                  : 'bg-white/5 hover:bg-white/10 text-gray-300'
+              }`}
+            >
+              1.2m Plan
+            </button>
+            <button
+              type="button"
+              onClick={() => setCutHeight(2.1)}
+              className={`px-2 py-1 rounded-lg transition-colors ${
+                Math.abs(cutHeight - 2.1) < 0.05
+                  ? 'bg-amber-500 text-black font-semibold'
+                  : 'bg-white/5 hover:bg-white/10 text-gray-300'
+              }`}
+            >
+              2.1m Lintel
+            </button>
+            <button
+              type="button"
+              onClick={() => setCutHeight(2.8)}
+              className={`px-2 py-1 rounded-lg transition-colors ${
+                Math.abs(cutHeight - 2.8) < 0.05
+                  ? 'bg-amber-500 text-black font-semibold'
+                  : 'bg-white/5 hover:bg-white/10 text-gray-300'
+              }`}
+            >
+              2.8m Full
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 2D Architectural Minimap Overlay */}
       {showMinimap && (
