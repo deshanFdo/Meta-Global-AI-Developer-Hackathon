@@ -81,6 +81,11 @@ function CameraController({
   const controlsRef = useRef<OrbitControlsImpl>(null);
 
   useEffect(() => {
+    // When in first-person mode, WalkthroughControls has sole ownership of camera
+    if (viewMode === 'first-person') {
+      return;
+    }
+
     if (teleportTarget) {
       camera.position.set(teleportTarget[0], teleportTarget[1], teleportTarget[2]);
       if (controlsRef.current) {
@@ -103,27 +108,23 @@ function CameraController({
     } else if (viewMode === 'side') {
       camera.position.set(size * 1.1, size * 0.3, 0);
       camera.lookAt(0, 0, 0);
-    } else if (viewMode === 'first-person') {
-      camera.position.set(-1.0, 1.65, 1.0);
-      camera.lookAt(1.5, 1.65, 2.5);
     } else {
       camera.position.set(size * 0.9, size * 0.8, size * 1.0);
       camera.lookAt(0, 0, 0);
     }
 
     if (controlsRef.current) {
-      if (viewMode === 'first-person') {
-        controlsRef.current.target.set(1.5, 1.65, 2.5);
-        controlsRef.current.minDistance = 0.1;
-        controlsRef.current.maxDistance = 40;
-      } else {
-        controlsRef.current.target.set(0, 0, 0);
-        controlsRef.current.minDistance = 2;
-        controlsRef.current.maxDistance = 100;
-      }
+      controlsRef.current.target.set(0, 0, 0);
+      controlsRef.current.minDistance = 2;
+      controlsRef.current.maxDistance = 100;
       controlsRef.current.update();
     }
   }, [viewMode, analysis, camera, teleportTarget]);
+
+  // Completely unmount OrbitControls in first-person mode to prevent event conflicts
+  if (viewMode === 'first-person') {
+    return null;
+  }
 
   return (
     <OrbitControls
@@ -132,8 +133,8 @@ function CameraController({
       enableDamping
       dampingFactor={0.05}
       maxPolarAngle={viewMode === 'top' ? Math.PI / 2 : Math.PI / 2 - 0.02}
-      minDistance={viewMode === 'first-person' ? 0.1 : 2}
-      maxDistance={viewMode === 'first-person' ? 40 : 100}
+      minDistance={2}
+      maxDistance={100}
     />
   );
 }
@@ -336,6 +337,7 @@ export default function HouseViewer({
           <WalkthroughControls
             analysis={analysis}
             active={viewMode === 'first-person'}
+            teleportTarget={teleportTarget}
           />
 
           {/* Camera Tracker for 2D Minimap and HUD */}
@@ -548,12 +550,19 @@ export default function HouseViewer({
         </div>
       )}
 
+      {/* First-person subtle crosshair reticle for precise spatial navigation & door aiming */}
+      {viewMode === 'first-person' && !isXRPresenting && (
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+          <div className="w-1.5 h-1.5 rounded-full bg-white/60 ring-2 ring-black/40 shadow-sm" />
+        </div>
+      )}
+
       {/* Camera / Navigation hint badge */}
-      <div className="absolute bottom-4 right-4 pointer-events-none glass-subtle rounded-lg px-2.5 py-1 text-[11px] text-gray-400 border border-white/5">
+      <div className="absolute bottom-4 right-4 pointer-events-none glass-subtle rounded-lg px-2.5 py-1 text-[11px] text-gray-400 border border-white/5 shadow-md">
         {isXRPresenting
           ? 'WebXR Active | Right Trigger: Teleport | Left Stick: Move'
           : viewMode === 'first-person'
-          ? 'WASD / Arrow Keys: Walk | Mouse: Look | Click doors to open/close'
+          ? 'WASD: Walk | Shift: Sprint | Q/E or Mouse: Look | E / Click: Toggle Door | Click canvas to lock cursor'
           : isMeasuring
           ? 'Tape Measure active: Click point A, then click point B'
           : 'Left Click: Rotate | Right Click: Pan | Click doors to swing open'}

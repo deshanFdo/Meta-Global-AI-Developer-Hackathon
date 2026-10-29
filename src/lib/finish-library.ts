@@ -223,3 +223,4 @@ export function getMaterialForTrimFinish(key: TrimFinishKey): THREE.MeshStandard
     metalness: finish.metalness,
   });
 }
+
