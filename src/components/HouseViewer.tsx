@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useEffect, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState, useCallback } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Grid } from '@react-three/drei';
 import * as THREE from 'three';
@@ -11,7 +11,9 @@ import DimensionOverlay from './DimensionOverlay';
 import WalkthroughControls from './WalkthroughControls';
 import Minimap from './Minimap';
 import MeasurementTool, { type MeasurementRecord } from './MeasurementTool';
+import WebXRSessionManager from '@/lib/webxr-manager';
 import { calculateSolarPosition } from '@/lib/solar-calculator';
+import type { FinishSelectionState } from '@/lib/cost-engine';
 
 interface HouseViewerProps {
   analysis: HouseAnalysis | null;
@@ -19,6 +21,7 @@ interface HouseViewerProps {
   viewMode: ViewerState['viewMode'];
   lightingMode?: 'day' | 'golden_hour' | 'night';
   flooringPreset?: FlooringPreset;
+  finishes?: FinishSelectionState;
   solarStudy?: SolarStudySettings;
   showWireframe: boolean;
   showLabels: boolean;
@@ -28,12 +31,15 @@ interface HouseViewerProps {
   isMeasuring?: boolean;
   showMinimap?: boolean;
   isSoundEnabled?: boolean;
+  arScale?: 'real' | 'tabletop';
   selectedElement: string | null;
   onElementClick?: (id: string) => void;
   onExportRef?: (exportFn: () => void) => void;
   onToggleMeasuring?: () => void;
   onToggleMinimap?: () => void;
   onToggleSound?: () => void;
+  onOpenFinishCustomizer?: () => void;
+  onToggleARScale?: () => void;
 }
 
 // Throttled camera tracker to feed 2D Minimap player position and FOV orientation
@@ -138,6 +144,7 @@ export default function HouseViewer({
   viewMode,
   lightingMode = 'day',
   flooringPreset = 'scandinavian_oak',
+  finishes,
   solarStudy,
   showWireframe,
   showLabels,
@@ -147,11 +154,14 @@ export default function HouseViewer({
   isMeasuring = false,
   showMinimap = true,
   isSoundEnabled = false,
+  arScale = 'real',
   selectedElement,
   onElementClick,
   onToggleMeasuring,
   onToggleMinimap,
   onToggleSound,
+  onOpenFinishCustomizer,
+  onToggleARScale,
 }: HouseViewerProps) {
   const [teleportTarget, setTeleportTarget] = useState<[number, number, number] | null>(null);
   const [playerTransform, setPlayerTransform] = useState<{
@@ -162,6 +172,8 @@ export default function HouseViewer({
     dir: [0, 1],
   });
   const [measurements, setMeasurements] = useState<MeasurementRecord[]>([]);
+  const [isXRPresenting, setIsXRPresenting] = useState(false);
+  const glRef = useRef<THREE.WebGLRenderer | null>(null);
 
   if (!analysis) return null;
 
@@ -180,8 +192,31 @@ export default function HouseViewer({
     { name: 'Bed SE', icon: '🛏️', pos: [4.8, 1.65, 3.5] },
   ];
 
+  // Native WebXR session launcher (Quest 2/3/Pro / PCVR / WebXR AR)
+  const handleLaunchNativeVR = useCallback(async () => {
+    if (typeof navigator === 'undefined' || !navigator.xr) {
+      alert('WebXR is not supported on this browser. Try on Meta Quest Browser or Chrome with WebXR enabled.');
+      return;
+    }
+    try {
+      const isVRSupported = await navigator.xr.isSessionSupported('immersive-vr');
+      if (!isVRSupported) {
+        alert('Immersive VR session is not available on this device.');
+        return;
+      }
+      const session = await navigator.xr.requestSession('immersive-vr', {
+        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
+      });
+      if (glRef.current) {
+        await glRef.current.xr.setSession(session);
+      }
+    } catch (err) {
+      console.warn('VR session launch failed:', err);
+    }
+  }, []);
+
   return (
-    <div className="relative w-full h-full bg-[#0c0e14] overflow-hidden select-none">
+    <div id="xr-overlay" className="relative w-full h-full bg-[#0c0e14] overflow-hidden select-none">
       <Canvas
         shadows
         gl={{ antialias: true, alpha: true }}
@@ -190,6 +225,10 @@ export default function HouseViewer({
           fov: 45,
           near: 0.1,
           far: 500,
+        }}
+        onCreated={({ gl }) => {
+          gl.xr.enabled = true;
+          glRef.current = gl;
         }}
         className="w-full h-full"
       >
@@ -302,6 +341,13 @@ export default function HouseViewer({
           {/* Camera Tracker for 2D Minimap and HUD */}
           <CameraTracker onUpdate={(pos, dir) => setPlayerTransform({ pos, dir })} />
 
+          {/* WebXR Real-time VR & AR Manager */}
+          <WebXRSessionManager
+            analysis={analysis}
+            arScale={arScale}
+            onSessionChange={(inXR) => setIsXRPresenting(inXR)}
+          />
+
           {/* Interactive 3D Laser Dimension / Tape Measure Tool */}
           <MeasurementTool
             active={isMeasuring}
@@ -310,7 +356,7 @@ export default function HouseViewer({
             onRemoveMeasurement={(id) => setMeasurements((prev) => prev.filter((m) => m.id !== id))}
           />
 
-          {/* 3D House Model with PBR Procedural Textures */}
+          {/* 3D House Model with Pivot-First Interactive Doors & PBR Finishes */}
           <HouseModel
             analysis={analysis}
             textures={textures}
@@ -319,6 +365,7 @@ export default function HouseViewer({
             showRoof={showRoof}
             showFurniture={showFurniture}
             flooringPreset={flooringPreset}
+            finishes={finishes}
             selectedElement={selectedElement}
             onElementClick={onElementClick}
           />
@@ -386,8 +433,42 @@ export default function HouseViewer({
         </div>
       )}
 
-      {/* Floating Quick Action Icons (Sound & Measure & Minimap) */}
+      {/* Floating Quick Action Bar */}
       <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+        {onOpenFinishCustomizer && (
+          <button
+            type="button"
+            onClick={onOpenFinishCustomizer}
+            className="p-2 rounded-xl text-xs font-medium border border-blue-500/40 bg-blue-600/30 text-blue-200 hover:bg-blue-600 hover:text-white transition-all shadow-md shadow-blue-500/20 flex items-center gap-1.5"
+            title="Open BIM Finish Studio & Cost Estimator"
+          >
+            <span>🎨</span>
+            <span>Finishes & Cost</span>
+          </button>
+        )}
+
+        {/* Native WebXR VR Launcher */}
+        <button
+          type="button"
+          onClick={handleLaunchNativeVR}
+          className="p-2 rounded-xl text-xs font-medium border border-purple-500/40 bg-purple-600/20 text-purple-200 hover:bg-purple-600 hover:text-white transition-all shadow-md shadow-purple-500/20 flex items-center gap-1.5"
+          title="Launch Immersive VR (Meta Quest Browser / WebXR)"
+        >
+          <span>🥽</span>
+          <span>WebXR VR</span>
+        </button>
+
+        {onToggleARScale && (
+          <button
+            type="button"
+            onClick={onToggleARScale}
+            className="p-2 rounded-xl text-xs font-medium border border-white/10 glass-strong text-gray-300 hover:text-white transition-all"
+            title="Toggle 1:1 Life Size vs 1:20 Tabletop Scale"
+          >
+            {arScale === 'tabletop' ? '📐 1:20 Scale' : '🏛️ 1:1 Scale'}
+          </button>
+        )}
+
         {onToggleSound && (
           <button
             type="button"
@@ -402,6 +483,7 @@ export default function HouseViewer({
             {isSoundEnabled ? '🔊 Sound On' : '🔇 Audio'}
           </button>
         )}
+
         {onToggleMeasuring && (
           <button
             type="button"
@@ -416,6 +498,7 @@ export default function HouseViewer({
             📏 Ruler
           </button>
         )}
+
         {onToggleMinimap && (
           <button
             type="button"
@@ -467,11 +550,13 @@ export default function HouseViewer({
 
       {/* Camera / Navigation hint badge */}
       <div className="absolute bottom-4 right-4 pointer-events-none glass-subtle rounded-lg px-2.5 py-1 text-[11px] text-gray-400 border border-white/5">
-        {viewMode === 'first-person'
-          ? 'WASD / Arrow Keys: Walk | Mouse: Look Around | Click minimap to jump'
+        {isXRPresenting
+          ? 'WebXR Active | Right Trigger: Teleport | Left Stick: Move'
+          : viewMode === 'first-person'
+          ? 'WASD / Arrow Keys: Walk | Mouse: Look | Click doors to open/close'
           : isMeasuring
           ? 'Tape Measure active: Click point A, then click point B'
-          : 'Left Click: Rotate | Right Click: Pan | Scroll: Zoom'}
+          : 'Left Click: Rotate | Right Click: Pan | Click doors to swing open'}
       </div>
     </div>
   );

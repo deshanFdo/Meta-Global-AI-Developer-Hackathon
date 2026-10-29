@@ -86,7 +86,7 @@ export class GeometryEngine {
     options?: { showRoof?: boolean; showFurniture?: boolean; flooringPreset?: FlooringPreset },
   ): THREE.Group {
     const house = new THREE.Group();
-    house.name = 'House';
+    house.name = 'house_root_group';
 
     // Compute centering offset so the house sits at origin
     this.centerOffsetX = analysis.metadata.overallWidth / 2;
@@ -332,19 +332,34 @@ export class GeometryEngine {
         ? Math.max(wall.thickness, 0.2)
         : Math.max(wall.thickness, 0.12);
 
-      // Door panel (slightly recessed)
+      // Pivot-First Architecture: Hinge group at left jamb (-door.width / 2)
+      const pivot = new THREE.Group();
+      pivot.name = `door_pivot_${door.id}`;
+      pivot.position.set(-door.width / 2, 0, 0);
+      pivot.userData = {
+        isDoorPivot: true,
+        doorId: door.id,
+        doorStyle: door.style,
+        isOpen: false,
+        targetAngle: door.style === 'sliding' ? 0 : -Math.PI * 0.58, // ~105 deg swing
+        slideDist: door.style === 'sliding' ? (door.width * 0.8) : 0,
+        currentT: 0,
+        doorWidth: door.width,
+      };
+
+      // Door panel (offset by +width/2 from hinge!)
       const panelGeom = new THREE.BoxGeometry(
-        door.width - 0.06,
-        door.height - 0.06,
+        door.width - 0.04,
+        door.height - 0.04,
         thickness * 0.3,
       );
       const panelColor = door.color || '#6b4226';
       const panelMat = this.createMaterial('door', panelColor);
       const panel = new THREE.Mesh(panelGeom, panelMat);
       panel.name = `door_panel_${door.id}`;
-      panel.userData = { elementType: 'door', elementId: door.id, door };
-      panel.position.y = door.height / 2;
-      doorGroup.add(panel);
+      panel.userData = { elementType: 'door', elementId: door.id, door, pivotGroup: pivot };
+      panel.position.set(door.width / 2, door.height / 2, 0);
+      pivot.add(panel);
 
       // Door frame (four thin boxes around the opening)
       const frameMat = this.createMaterial('doorFrame', '#4a3520');
@@ -379,14 +394,18 @@ export class GeometryEngine {
       });
       const plateGeom = new THREE.BoxGeometry(0.035, 0.14, 0.008);
       const handlePlate = new THREE.Mesh(plateGeom, leverMat);
-      handlePlate.position.set(-door.width / 2 + 0.12, 0.95, thickness * 0.16);
-      doorGroup.add(handlePlate);
+      handlePlate.position.set(door.width - 0.12, 0.95, thickness * 0.16);
+      handlePlate.userData = { elementType: 'door', elementId: door.id, door, pivotGroup: pivot };
+      pivot.add(handlePlate);
 
       const leverGeom = new THREE.CylinderGeometry(0.009, 0.009, 0.1, 8);
       const lever = new THREE.Mesh(leverGeom, leverMat);
       lever.rotation.z = Math.PI / 2;
-      lever.position.set(-door.width / 2 + 0.16, 0.97, thickness * 0.19);
-      doorGroup.add(lever);
+      lever.position.set(door.width - 0.08, 0.97, thickness * 0.19);
+      lever.userData = { elementType: 'door', elementId: door.id, door, pivotGroup: pivot };
+      pivot.add(lever);
+
+      doorGroup.add(pivot);
 
       // Position in world
       const px = door.position.x - this.centerOffsetX;

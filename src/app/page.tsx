@@ -16,6 +16,7 @@ import UploadZone from '@/components/UploadZone';
 import PipelineProgress from '@/components/PipelineProgress';
 import ViewControls from '@/components/ViewControls';
 import ArchitectureInspector from '@/components/ArchitectureInspector';
+import FinishCustomizer from '@/components/FinishCustomizer';
 import { exportHouseToGLB } from '@/lib/export-3d';
 import { exportHouseToDXF, exportHouseScheduleCSV } from '@/lib/dxf-exporter';
 import SolarStudyControl from '@/components/SolarStudyControl';
@@ -23,6 +24,7 @@ import ARModal from '@/components/ARModal';
 import PlanAssistant from '@/components/PlanAssistant';
 import { GeometryEngine } from '@/lib/geometry-engine';
 import { soundscape } from '@/lib/soundscape';
+import type { FinishSelectionState } from '@/lib/cost-engine';
 
 const HouseViewer = dynamic(() => import('@/components/HouseViewer'), {
   ssr: false,
@@ -61,6 +63,13 @@ const INITIAL_VIEWER: ViewerState = {
   currentFloor: 0,
 };
 
+const INITIAL_FINISHES: FinishSelectionState = {
+  globalWall: 'warm-alabaster',
+  globalFloor: 'oak-parquet',
+  globalTrim: 'matte-black',
+  roomOverrides: {},
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -87,6 +96,8 @@ export default function Home() {
   const [pipeline, setPipeline] = useState<PipelineProgressType>(INITIAL_PIPELINE);
   const [preview, setPreview] = useState<string | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+  const [isFinishCustomizerOpen, setIsFinishCustomizerOpen] = useState(false);
+  const [finishes, setFinishes] = useState<FinishSelectionState>(INITIAL_FINISHES);
   const [lightingMode, setLightingMode] = useState<'day' | 'golden_hour' | 'night'>('day');
   const [flooringPreset, setFlooringPreset] = useState<FlooringPreset>('scandinavian_oak');
   const [solarStudy, setSolarStudy] = useState<SolarStudySettings>({
@@ -100,6 +111,7 @@ export default function Home() {
   const [isMeasuring, setIsMeasuring] = useState(false);
   const [showMinimap, setShowMinimap] = useState(true);
   const [isSoundEnabled, setIsSoundEnabled] = useState(false);
+  const [arScale, setArScale] = useState<'real' | 'tabletop'>('real');
   const [selectedArchetype, setSelectedArchetype] = useState<'villa' | 'loft' | 'eco_cabin'>('villa');
 
   // ---- pipeline helpers ----------------------------------------------------
@@ -361,6 +373,21 @@ export default function Home() {
               ⚡ Demo
             </button>
 
+            {hasAnalysis && (
+              <button
+                type="button"
+                onClick={() => setIsFinishCustomizerOpen((p) => !p)}
+                className={`text-xs border px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 font-medium ${
+                  isFinishCustomizerOpen
+                    ? 'bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-500/30'
+                    : 'bg-white/5 hover:bg-white/10 text-emerald-300 border-emerald-500/30'
+                }`}
+              >
+                <span>🎨</span>
+                <span>BIM Finishes</span>
+              </button>
+            )}
+
             {isProcessing && (
               <span className="flex items-center gap-1.5 text-xs text-[var(--accent)] bg-[var(--accent-muted)] px-3 py-1 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
@@ -472,6 +499,7 @@ export default function Home() {
               viewMode={viewer.viewMode}
               lightingMode={lightingMode}
               flooringPreset={flooringPreset}
+              finishes={finishes}
               solarStudy={solarStudy}
               showWireframe={viewer.showWireframe}
               showLabels={viewer.showLabels}
@@ -481,11 +509,14 @@ export default function Home() {
               isMeasuring={isMeasuring}
               showMinimap={showMinimap}
               isSoundEnabled={isSoundEnabled}
+              arScale={arScale}
               selectedElement={viewer.selectedElement}
               onElementClick={(id) => setViewer((prev) => ({ ...prev, selectedElement: id }))}
               onToggleMeasuring={() => setIsMeasuring((p) => !p)}
               onToggleMinimap={() => setShowMinimap((p) => !p)}
               onToggleSound={handleToggleSound}
+              onOpenFinishCustomizer={() => setIsFinishCustomizerOpen(true)}
+              onToggleARScale={() => setArScale((s) => (s === 'real' ? 'tabletop' : 'real'))}
             />
           ) : (
             /* Enhanced 3-Archetype Showcase Grid when no floor plan is loaded */
@@ -607,6 +638,19 @@ export default function Home() {
             onClose={() => setIsInspectorOpen(false)}
             onSelectRoom={(roomId) => setViewer((prev) => ({ ...prev, selectedElement: roomId }))}
           />
+
+          {/* BIM Finish Studio & Cost Estimator Drawer */}
+          {viewer.analysis && (
+            <FinishCustomizer
+              analysis={viewer.analysis}
+              finishes={finishes}
+              onChangeFinishes={setFinishes}
+              isOpen={isFinishCustomizerOpen}
+              onClose={() => setIsFinishCustomizerOpen(false)}
+              selectedRoomId={viewer.selectedElement}
+              onSelectRoom={(roomId) => setViewer((prev) => ({ ...prev, selectedElement: roomId }))}
+            />
+          )}
 
           {/* Dynamic Solar Study Floating Controls */}
           {hasAnalysis && isSolarStudyOpen && (
