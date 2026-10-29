@@ -8,6 +8,7 @@ import type {
   Roof,
   RoomType,
   WallMaterial,
+  FlooringPreset,
 } from '@/types';
 import { FurnitureGenerator } from './furniture-generator';
 import { ProceduralTextureGenerator } from './texture-generator';
@@ -82,7 +83,7 @@ export class GeometryEngine {
   /** Orchestrates full house geometry generation. */
   generateHouseGeometry(
     analysis: HouseAnalysis,
-    options?: { showRoof?: boolean; showFurniture?: boolean },
+    options?: { showRoof?: boolean; showFurniture?: boolean; flooringPreset?: FlooringPreset },
   ): THREE.Group {
     const house = new THREE.Group();
     house.name = 'House';
@@ -108,7 +109,7 @@ export class GeometryEngine {
     this.generateDoorOpenings(analysis.doors, analysis.walls);
     this.generateWindowOpenings(analysis.windows, analysis.walls);
 
-    const floorGroup = this.generateFloor(analysis.rooms);
+    const floorGroup = this.generateFloor(analysis.rooms, options?.flooringPreset);
     house.add(floorGroup);
 
     // Furniture generation (when furniture items exist and not disabled)
@@ -522,7 +523,7 @@ export class GeometryEngine {
   // Floors
   // ==================================================
 
-  generateFloor(rooms: Room[]): THREE.Group {
+  generateFloor(rooms: Room[], flooringPreset?: FlooringPreset): THREE.Group {
     const group = new THREE.Group();
     group.name = 'Floors';
 
@@ -546,17 +547,17 @@ export class GeometryEngine {
       const color = ROOM_FLOOR_COLORS[room.type] ?? ROOM_FLOOR_COLORS.unknown;
       const mat = this.createMaterial('floor', color) as THREE.MeshStandardMaterial;
 
-      // Apply procedural PBR textures by semantic room function
+      // Apply procedural PBR textures by semantic room function & selected preset
       if (
         room.type === 'living_room' ||
         room.type === 'bedroom' ||
         room.type === 'office' ||
         room.type === 'hallway'
       ) {
-        const parquet = ProceduralTextureGenerator.getParquetTexture();
-        if (parquet) {
-          mat.map = parquet;
-          mat.roughness = 0.42;
+        const texture = ProceduralTextureGenerator.getTextureByPreset(flooringPreset || 'scandinavian_oak');
+        if (texture) {
+          mat.map = texture;
+          mat.roughness = flooringPreset === 'carrara_marble' ? 0.15 : (flooringPreset === 'industrial_concrete' ? 0.55 : 0.42);
           mat.needsUpdate = true;
         }
       } else if (

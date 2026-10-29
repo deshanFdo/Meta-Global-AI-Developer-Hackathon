@@ -8,6 +8,8 @@ import type {
   PipelineProgress as PipelineProgressType,
   PipelineStage,
   ViewerState,
+  FlooringPreset,
+  SolarStudySettings,
 } from '@/types';
 
 import UploadZone from '@/components/UploadZone';
@@ -15,6 +17,10 @@ import PipelineProgress from '@/components/PipelineProgress';
 import ViewControls from '@/components/ViewControls';
 import ArchitectureInspector from '@/components/ArchitectureInspector';
 import { exportHouseToGLB } from '@/lib/export-3d';
+import { exportHouseToDXF, exportHouseScheduleCSV } from '@/lib/dxf-exporter';
+import SolarStudyControl from '@/components/SolarStudyControl';
+import ARModal from '@/components/ARModal';
+import PlanAssistant from '@/components/PlanAssistant';
 import { GeometryEngine } from '@/lib/geometry-engine';
 
 const HouseViewer = dynamic(() => import('@/components/HouseViewer'), {
@@ -82,6 +88,15 @@ export default function Home() {
   const [preview, setPreview] = useState<string | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [lightingMode, setLightingMode] = useState<'day' | 'golden_hour' | 'night'>('day');
+  const [flooringPreset, setFlooringPreset] = useState<FlooringPreset>('scandinavian_oak');
+  const [solarStudy, setSolarStudy] = useState<SolarStudySettings>({
+    enabled: false,
+    timeOfDay: 14.5,
+    season: 'summer',
+    latitude: 45.0,
+  });
+  const [isSolarStudyOpen, setIsSolarStudyOpen] = useState(false);
+  const [isARModalOpen, setIsARModalOpen] = useState(false);
 
   // ---- pipeline helpers ----------------------------------------------------
 
@@ -126,35 +141,15 @@ export default function Home() {
             image: base64,
             mimeType: file.type || 'image/png',
             imageType: 'floor_plan',
-            options: { generateTextures: true, detailLevel: 'high' },
+            options: { generateTextures: false, detailLevel: 'high' },
           }),
         });
 
-        // Simulate intermediate pipeline stages based on stream / response
-        advancePipeline('analyzing_structure', 'Analyzing structure…', 50);
-
-        if (!response.ok) {
-          throw new Error(`Server responded with ${response.status}`);
-        }
-
-        advancePipeline('segmenting', 'Segmenting floor plan components…', 30);
-
         const data: AnalyzeResponse = await response.json();
-
+        if (!response.ok) throw new Error(data.error ?? `Server responded with ${response.status}`);
         if (!data.success || !data.analysis) {
           throw new Error(data.error ?? 'Analysis failed');
         }
-
-        advancePipeline('fusing', 'Fusing analysis data…', 60);
-
-        // Small delay to show fusing stage
-        await new Promise((r) => setTimeout(r, 400));
-
-        advancePipeline('generating_3d', 'Building 3D geometry…', 50);
-        await new Promise((r) => setTimeout(r, 600));
-
-        advancePipeline('generating_textures', 'Applying textures…', 70);
-        await new Promise((r) => setTimeout(r, 500));
 
         // Done!
         setPipeline({
@@ -201,13 +196,12 @@ export default function Home() {
         }),
       });
 
-      advancePipeline('generating_3d', 'Synthesizing 3D mesh…', 75);
+      advancePipeline('uploading', 'Loading prebuilt sample…', 75);
       const data: AnalyzeResponse = await res.json();
       if (!data.success || !data.analysis) {
         throw new Error(data.error ?? 'Analysis failed');
       }
 
-      await new Promise((r) => setTimeout(r, 400));
       advancePipeline('complete', 'Model ready', 100);
 
       setViewer((prev) => ({
@@ -230,11 +224,29 @@ export default function Home() {
     exportHouseToGLB(house, `${viewer.analysis.metadata.style.toLowerCase().replace(/\s+/g, '-')}-3d-model.glb`);
   }, [viewer.analysis]);
 
+  const handleExportDXF = useCallback(() => {
+    if (!viewer.analysis) return;
+    exportHouseToDXF(viewer.analysis, `${viewer.analysis.metadata.style.toLowerCase().replace(/\s+/g, '-')}-cad.dxf`);
+  }, [viewer.analysis]);
+
+  const handleExportCSV = useCallback(() => {
+    if (!viewer.analysis) return;
+    exportHouseScheduleCSV(viewer.analysis, `${viewer.analysis.metadata.style.toLowerCase().replace(/\s+/g, '-')}-schedules.csv`);
+  }, [viewer.analysis]);
+
+  const handleToggleSolarStudy = useCallback(() => {
+    setIsSolarStudyOpen((p) => {
+      const next = !p;
+      setSolarStudy((s) => ({ ...s, enabled: next }));
+      return next;
+    });
+  }, []);
+
   // ---- render --------------------------------------------------------------
 
   const isProcessing = viewer.isLoading;
   const hasAnalysis = viewer.analysis !== null;
-  const totalFloors = viewer.analysis?.metadata.floors ?? 1;
+  const totalFloors = 1;
 
   return (
     <div className="h-screen flex flex-col overflow-hidden font-[family-name:var(--font-geist-sans)]">
@@ -277,7 +289,7 @@ export default function Home() {
               disabled={isProcessing}
               className="text-xs bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 font-medium disabled:opacity-50"
             >
-              <span>⚡</span> Try Demo Blueprint
+              <span>⚡</span> Try Prebuilt Sample
             </button>
             {isProcessing && (
               <span className="flex items-center gap-1.5 text-xs text-[var(--accent)] bg-[var(--accent-muted)] px-3 py-1 rounded-full">
@@ -302,7 +314,7 @@ export default function Home() {
                 }`}
               >
                 <span>🤖</span>
-                <span>AI Architecture Audit</span>
+                <span>Plan Inspector</span>
               </button>
             )}
           </div>
@@ -326,11 +338,14 @@ export default function Home() {
             {/* Pipeline Progress */}
             {pipeline.stage !== 'idle' && <PipelineProgress progress={pipeline} />}
 
+            {viewer.analysis && <PlanAssistant key={viewer.analysis.id} analysis={viewer.analysis} onSelect={(id) => setViewer((prev) => ({ ...prev, selectedElement: id }))} />}
             {/* View Controls */}
             {hasAnalysis && (
               <ViewControls
                 viewMode={viewer.viewMode}
                 lightingMode={lightingMode}
+                flooringPreset={flooringPreset}
+                isSolarStudyOpen={isSolarStudyOpen}
                 showWireframe={viewer.showWireframe}
                 showLabels={viewer.showLabels}
                 showDimensions={viewer.showDimensions}
@@ -340,6 +355,8 @@ export default function Home() {
                 totalFloors={totalFloors}
                 onViewModeChange={(mode) => setViewer((prev) => ({ ...prev, viewMode: mode }))}
                 onLightingChange={setLightingMode}
+                onFlooringChange={setFlooringPreset}
+                onToggleSolarStudy={handleToggleSolarStudy}
                 onToggleRoof={() => setViewer((prev) => ({ ...prev, showRoof: !prev.showRoof }))}
                 onToggleFurniture={() => setViewer((prev) => ({ ...prev, showFurniture: !prev.showFurniture }))}
                 onToggleWireframe={() =>
@@ -355,6 +372,9 @@ export default function Home() {
                   setViewer((prev) => ({ ...prev, currentFloor: floor }))
                 }
                 onExportGLB={handleExportGLB}
+                onExportDXF={handleExportDXF}
+                onExportCSV={handleExportCSV}
+                onOpenAR={() => setIsARModalOpen(true)}
               />
             )}
           </div>
@@ -368,10 +388,13 @@ export default function Home() {
               textures={viewer.textures}
               viewMode={viewer.viewMode}
               lightingMode={lightingMode}
+              flooringPreset={flooringPreset}
+              solarStudy={solarStudy}
               showWireframe={viewer.showWireframe}
               showLabels={viewer.showLabels}
               showDimensions={viewer.showDimensions}
               showRoof={viewer.showRoof}
+              showFurniture={viewer.showFurniture}
               selectedElement={viewer.selectedElement}
               onElementClick={(id) => setViewer((prev) => ({ ...prev, selectedElement: id }))}
             />
@@ -408,14 +431,14 @@ export default function Home() {
                   </h2>
                   <p className="text-sm text-[var(--text-muted)] mt-2 leading-relaxed">
                     Drop a 2D floor plan, blueprint, or architectural drawing. Our AI pipeline
-                    will analyze it and generate an interactive 3D model in seconds.
+                    will analyze it and generate an interactive 3D model with estimated dimensions.
                   </p>
                   <button
                     type="button"
                     onClick={handleLoadDemo}
                     className="mt-4 inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg shadow-blue-500/25 transition-all hover:scale-105"
                   >
-                    <span>⚡</span> Load Sample Blueprint
+                    <span>⚡</span> Load Prebuilt Sample
                   </button>
                 </div>
 
@@ -424,14 +447,7 @@ export default function Home() {
                     <span className="w-1 h-1 rounded-full bg-blue-400" />
                     Muse Spark
                   </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-1 h-1 rounded-full bg-green-400" />
-                    SAM 3.1
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-1 h-1 rounded-full bg-purple-400" />
-                    Muse Image
-                  </span>
+
                 </div>
               </div>
             </div>
@@ -457,6 +473,21 @@ export default function Home() {
             isOpen={isInspectorOpen}
             onClose={() => setIsInspectorOpen(false)}
             onSelectRoom={(roomId) => setViewer((prev) => ({ ...prev, selectedElement: roomId }))}
+          />
+          {hasAnalysis && isSolarStudyOpen && (
+            <div className="absolute top-4 right-4 z-20">
+              <SolarStudyControl
+                settings={solarStudy}
+                onChange={setSolarStudy}
+                onClose={handleToggleSolarStudy}
+              />
+            </div>
+          )}
+          <ARModal
+            isOpen={isARModalOpen}
+            onClose={() => setIsARModalOpen(false)}
+            analysis={viewer.analysis}
+            onExportGLB={handleExportGLB}
           />
         </main>
       </div>

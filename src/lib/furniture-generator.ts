@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { FurnitureItem, FurnitureType } from '@/types';
+import type { FurnitureItem } from '@/types';
 
 // ============================================
 // Furniture Material Palette
@@ -179,7 +179,6 @@ export class FurnitureGenerator {
   private buildDoubleBed(group: THREE.Group, item: FurnitureItem): void {
     const w = item.width || 1.8;
     const d = item.depth || 2.1;
-    const h = 0.55;
 
     // 1. Bed Frame
     const frame = new THREE.Mesh(new THREE.BoxGeometry(w, 0.25, d), WOOD_OAK);
@@ -261,7 +260,6 @@ export class FurnitureGenerator {
   private buildSofa(group: THREE.Group, item: FurnitureItem): void {
     const w = item.width || 2.4;
     const d = item.depth || 1.0;
-    const h = 0.85;
 
     // 1. Base seating platform
     const base = new THREE.Mesh(new THREE.BoxGeometry(w, 0.25, d), FABRIC_CHARCOAL);
@@ -360,6 +358,7 @@ export class FurnitureGenerator {
   }
 
   private buildChair(group: THREE.Group, _item: FurnitureItem): void {
+    void _item;
     group.add(this.createChairMesh());
   }
 
@@ -550,6 +549,7 @@ export class FurnitureGenerator {
   }
 
   private buildPlant(group: THREE.Group, _item: FurnitureItem): void {
+    void _item;
     // Ceramic Pot
     const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.18, 0.45, 16), CERAMIC_WHITE);
     pot.position.y = 0.225;
@@ -566,6 +566,7 @@ export class FurnitureGenerator {
   }
 
   private buildFurnace(group: THREE.Group, _item: FurnitureItem): void {
+    void _item;
     // Water heater boiler cylinder
     const boiler = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.8, 16), CHROME_METAL);
     boiler.position.y = 0.9;

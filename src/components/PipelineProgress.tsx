@@ -16,10 +16,6 @@ interface StageInfo {
 const STAGES: StageInfo[] = [
   { key: 'uploading', icon: '📤', label: 'Uploading Image' },
   { key: 'analyzing_structure', icon: '🧠', label: 'Analyzing Floor Plan (Muse Spark)' },
-  { key: 'segmenting', icon: '🎯', label: 'Segmenting Components (SAM 3.1)' },
-  { key: 'fusing', icon: '🔗', label: 'Fusing Analysis Data' },
-  { key: 'generating_3d', icon: '📐', label: 'Generating 3D Model' },
-  { key: 'generating_textures', icon: '🎨', label: 'Generating Textures (Muse Image)' },
   { key: 'complete', icon: '✅', label: 'Complete!' },
 ];
 

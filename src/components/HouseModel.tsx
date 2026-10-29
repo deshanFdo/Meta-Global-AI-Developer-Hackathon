@@ -3,7 +3,7 @@
 import React, { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { Html } from '@react-three/drei';
-import type { HouseAnalysis, GeneratedTextures } from '@/types';
+import type { HouseAnalysis, GeneratedTextures, FlooringPreset } from '@/types';
 import { GeometryEngine } from '@/lib/geometry-engine';
 
 interface HouseModelProps {
@@ -12,6 +12,8 @@ interface HouseModelProps {
   showWireframe: boolean;
   showLabels: boolean;
   showRoof: boolean;
+  showFurniture: boolean;
+  flooringPreset?: FlooringPreset;
   selectedElement: string | null;
   onElementClick?: (id: string) => void;
 }
@@ -22,6 +24,8 @@ export default function HouseModel({
   showWireframe,
   showLabels,
   showRoof,
+  showFurniture,
+  flooringPreset,
   selectedElement,
   onElementClick,
 }: HouseModelProps) {
@@ -30,14 +34,14 @@ export default function HouseModel({
   // Generate 3D geometry using GeometryEngine
   const houseGroup = useMemo(() => {
     const engine = new GeometryEngine();
-    return engine.generateHouseGeometry(analysis, { showRoof, showFurniture: true });
-  }, [analysis, showRoof]);
+    return engine.generateHouseGeometry(analysis, { showRoof, showFurniture, flooringPreset });
+  }, [analysis, showRoof, showFurniture, flooringPreset]);
 
   // Update wireframe state and selection highlight across all meshes in the group
   useEffect(() => {
     houseGroup.traverse((child) => {
       if (child instanceof THREE.Mesh) {
-        if (selectedElement && child.name === selectedElement) {
+        if (selectedElement && (child.name === selectedElement || child.name === `floor_${selectedElement}` || child.name === `wall_${selectedElement}`)) {
           child.scale.set(1.02, 1.02, 1.02);
         } else {
           child.scale.set(1, 1, 1);
@@ -92,7 +96,7 @@ export default function HouseModel({
           e.stopPropagation();
           const target = e.object;
           if (target && target.name && onElementClick) {
-            onElementClick(target.name);
+            onElementClick(target.name.replace(/^(floor|wall|door|window)_/, ''));
           }
         }}
       />
@@ -109,7 +113,7 @@ export default function HouseModel({
               distanceFactor={18}
               className="pointer-events-none select-none"
             >
-              <div className="bg-[#151822]/90 backdrop-blur-md border border-blue-500/30 rounded-lg px-2.5 py-1 text-center shadow-lg shadow-black/50 whitespace-nowrap">
+              <div className={`${selectedElement === lbl.id ? "ring-2 ring-amber-400" : ""} bg-[#151822]/90 backdrop-blur-md border border-blue-500/30 rounded-lg px-2.5 py-1 text-center shadow-lg shadow-black/50 whitespace-nowrap`}>
                 <p className="text-[11px] font-semibold text-white tracking-wide">
                   {lbl.name}
                 </p>

@@ -1,36 +1,19 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# BlueprintTo3D
 
-## Getting Started
+Turn a residential floor-plan image into an interactive 3D reconstruction with Meta Muse Spark and Three.js. Compare the extracted 2D map to the source image, inspect rooms and assumptions, ask Muse questions about the extracted plan, and export GLB geometry.
 
-First, run the development server:
+## Run locally
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+Install dependencies with `npm install`. Create `.env.local` with `META_API_KEY` and `META_API_BASE_URL=https://api.meta.ai/v1`. Never share or commit credentials. Run `npm run dev`, then visit http://localhost:3000.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## What runs
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Live uploads call Muse Spark 1.3 for structured extraction; Three.js builds geometry locally. The prebuilt sample is explicitly labeled and does not call vision inference. Failed live requests return an error and never substitute the sample. The question panel sends the extracted plan and your question to Muse; it does not send the original image again.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Current limits
 
-## Learn More
+Dimensions, roof shape, furniture and heights may be inferred. Confidence is the model's self-estimate, not measured accuracy. The 2D map is a reconstruction, not a pixel-aligned overlay. Multi-floor reconstruction, SAM segmentation, generated texture application, editable geometry and verified clearance checking are not implemented. Answers do not certify structural safety or building-code compliance. Before public deployment, add authentication and request quotas to protect API spend.
 
-To learn more about Next.js, take a look at the following resources:
+## Checks
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`npx tsc --noEmit`, `npm run lint`, and `npm run build`.

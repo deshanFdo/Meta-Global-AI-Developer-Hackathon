@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import * as THREE from 'three';
 import { Html, Line } from '@react-three/drei';
 import type { HouseAnalysis } from '@/types';
 

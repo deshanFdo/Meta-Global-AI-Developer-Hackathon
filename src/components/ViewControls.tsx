@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import type { ViewerState } from '@/types';
+import React from 'react';
+import type { ViewerState, FlooringPreset } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -12,6 +12,8 @@ type ViewMode = ViewerState['viewMode'];
 interface ViewControlsProps {
   viewMode: ViewMode;
   lightingMode?: 'day' | 'golden_hour' | 'night';
+  flooringPreset?: FlooringPreset;
+  isSolarStudyOpen?: boolean;
   showWireframe: boolean;
   showLabels: boolean;
   showDimensions: boolean;
@@ -21,6 +23,8 @@ interface ViewControlsProps {
   totalFloors: number;
   onViewModeChange: (mode: ViewMode) => void;
   onLightingChange?: (mode: 'day' | 'golden_hour' | 'night') => void;
+  onFlooringChange?: (preset: FlooringPreset) => void;
+  onToggleSolarStudy?: () => void;
   onToggleWireframe: () => void;
   onToggleLabels: () => void;
   onToggleDimensions: () => void;
@@ -28,6 +32,9 @@ interface ViewControlsProps {
   onToggleFurniture: () => void;
   onFloorChange: (floor: number) => void;
   onExportGLB?: () => void;
+  onExportDXF?: () => void;
+  onExportCSV?: () => void;
+  onOpenAR?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -52,16 +59,16 @@ function ToggleButton({
       title={label}
       aria-pressed={active}
       className={`
-        flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-all duration-200
+        flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium transition-all duration-200
         ${
           active
-            ? 'bg-[var(--accent)] text-white shadow-md shadow-blue-500/20'
-            : 'bg-[var(--surface-raised)] text-[var(--text-secondary)] hover:bg-[var(--border)] hover:text-[var(--text-primary)]'
+            ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+            : 'bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white'
         }
       `}
     >
       {icon}
-      <span className="hidden sm:inline">{label}</span>
+      <span>{label}</span>
     </button>
   );
 }
@@ -73,6 +80,8 @@ function ToggleButton({
 export default function ViewControls({
   viewMode,
   lightingMode = 'day',
+  flooringPreset = 'scandinavian_oak',
+  isSolarStudyOpen = false,
   showWireframe,
   showLabels,
   showDimensions,
@@ -82,6 +91,8 @@ export default function ViewControls({
   totalFloors,
   onViewModeChange,
   onLightingChange,
+  onFlooringChange,
+  onToggleSolarStudy,
   onToggleWireframe,
   onToggleLabels,
   onToggleDimensions,
@@ -89,15 +100,16 @@ export default function ViewControls({
   onToggleFurniture,
   onFloorChange,
   onExportGLB,
+  onExportDXF,
+  onExportCSV,
+  onOpenAR,
 }: ViewControlsProps) {
-  const [showComingSoon, setShowComingSoon] = useState(false);
-
   const viewModes: { mode: ViewMode; label: string; icon: React.ReactNode }[] = [
     {
       mode: 'perspective',
-      label: '3D',
+      label: '3D Orbit',
       icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" />
           <path d="M12 12l8-4.5" />
           <path d="M12 12v9" />
@@ -107,9 +119,9 @@ export default function ViewControls({
     },
     {
       mode: 'first-person',
-      label: 'Walk',
+      label: 'Walk (WASD)',
       icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="7" r="4" />
           <path d="M5.5 21v-4a7 7 0 0 1 13 0v4" />
         </svg>
@@ -117,63 +129,48 @@ export default function ViewControls({
     },
     {
       mode: 'top',
-      label: 'Top',
+      label: 'Top CAD',
       icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="3" width="18" height="18" rx="2" />
           <path d="M3 9h18" />
           <path d="M9 3v18" />
         </svg>
       ),
     },
-    {
-      mode: 'front',
-      label: 'Front',
-      icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <path d="M3 15h18" />
-        </svg>
-      ),
-    },
-    {
-      mode: 'side',
-      label: 'Side',
-      icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <path d="M15 3v18" />
-        </svg>
-      ),
-    },
+  ];
+
+  const flooringOptions: { preset: FlooringPreset; label: string; icon: string }[] = [
+    { preset: 'scandinavian_oak', label: 'Scand. Oak', icon: '🪵' },
+    { preset: 'dark_walnut', label: 'Dark Walnut', icon: '🌰' },
+    { preset: 'carrara_marble', label: 'Carrara Marble', icon: '🏛️' },
+    { preset: 'industrial_concrete', label: 'Concrete Screed', icon: '🏢' },
   ];
 
   return (
-    <div className="space-y-4">
-      <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
-        View Controls
-      </h3>
-
+    <div className="space-y-4 text-xs">
       {/* View mode selector */}
       <div>
-        <p className="text-xs text-[var(--text-muted)] mb-2">Camera Perspective</p>
-        <div className="flex gap-1 bg-[var(--surface)] rounded-xl p-1">
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+          Camera Perspective
+        </p>
+        <div className="flex gap-1 bg-white/5 rounded-xl p-1">
           {viewModes.map(({ mode, label, icon }) => (
             <button
               key={mode}
               type="button"
               onClick={() => onViewModeChange(mode)}
               className={`
-                flex-1 flex items-center justify-center gap-1 rounded-lg py-2 text-xs font-medium transition-all duration-200
+                flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition-all duration-200
                 ${
                   viewMode === mode
-                    ? 'bg-[var(--accent)] text-white shadow-md shadow-blue-500/20'
-                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-raised)]'
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }
               `}
             >
               {icon}
-              <span className="hidden sm:inline">{label}</span>
+              <span>{label}</span>
             </button>
           ))}
         </div>
@@ -182,8 +179,10 @@ export default function ViewControls({
       {/* Lighting atmosphere selector */}
       {onLightingChange && (
         <div>
-          <p className="text-xs text-[var(--text-muted)] mb-2">Lighting & Atmosphere</p>
-          <div className="flex gap-1 bg-[var(--surface)] rounded-xl p-1">
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            Lighting Atmosphere
+          </p>
+          <div className="flex gap-1 bg-white/5 rounded-xl p-1">
             <button
               type="button"
               onClick={() => onLightingChange('day')}
@@ -191,8 +190,8 @@ export default function ViewControls({
                 flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition-all duration-200
                 ${
                   lightingMode === 'day'
-                    ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
-                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-raised)]'
+                    ? 'bg-amber-500 text-black font-semibold shadow-md shadow-amber-500/20'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }
               `}
             >
@@ -206,7 +205,7 @@ export default function ViewControls({
                 ${
                   lightingMode === 'golden_hour'
                     ? 'bg-orange-600 text-white shadow-md shadow-orange-500/20'
-                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-raised)]'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }
               `}
             >
@@ -220,7 +219,7 @@ export default function ViewControls({
                 ${
                   lightingMode === 'night'
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
-                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-raised)]'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }
               `}
             >
@@ -230,91 +229,100 @@ export default function ViewControls({
         </div>
       )}
 
+      {/* Interior Flooring Finish Swapper */}
+      {onFlooringChange && (
+        <div>
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            PBR Floor Finish Palette
+          </p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {flooringOptions.map((opt) => (
+              <button
+                key={opt.preset}
+                type="button"
+                onClick={() => onFlooringChange(opt.preset)}
+                className={`
+                  flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-medium border text-left transition-all
+                  ${
+                    flooringPreset === opt.preset
+                      ? 'border-blue-500 bg-blue-600/20 text-white shadow-sm'
+                      : 'border-white/5 bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+                  }
+                `}
+              >
+                <span>{opt.icon}</span>
+                <span className="truncate">{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Display toggles */}
       <div>
-        <p className="text-xs text-[var(--text-muted)] mb-2">Display Options</p>
-        <div className="flex flex-wrap gap-2">
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+          Architectural Layers
+        </p>
+        <div className="flex flex-wrap gap-1.5">
           <ToggleButton
             active={showRoof}
             onClick={onToggleRoof}
-            label={showRoof ? "Roof: On" : "Roof: Cutaway"}
-            icon={
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                <polyline points="9 22 9 12 15 12 15 22" />
-              </svg>
-            }
+            label={showRoof ? 'Roof: Solid' : 'Roof: Cutaway'}
+            icon={<span>🏠</span>}
           />
           <ToggleButton
             active={showFurniture}
             onClick={onToggleFurniture}
-            label="Furniture"
-            icon={
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="11" width="18" height="8" rx="2" />
-                <path d="M5 11V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4" />
-                <path d="M5 19v2" />
-                <path d="M19 19v2" />
-              </svg>
-            }
+            label={showFurniture ? 'Fixtures: On' : 'Fixtures: Off'}
+            icon={<span>🛋️</span>}
           />
           <ToggleButton
             active={showDimensions}
             onClick={onToggleDimensions}
             label="CAD Dimensions"
-            icon={
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" />
-                <path d="m14.5 12.5 2-2" />
-                <path d="m11.5 9.5 2-2" />
-                <path d="m8.5 6.5 2-2" />
-                <path d="m17.5 15.5 2-2" />
-              </svg>
-            }
+            icon={<span>📐</span>}
           />
           <ToggleButton
             active={showLabels}
             onClick={onToggleLabels}
-            label="Room Badges"
-            icon={
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 7V4h16v3" />
-                <path d="M9 20h6" />
-                <path d="M12 4v16" />
-              </svg>
-            }
+            label="Room Tags"
+            icon={<span>🏷️</span>}
           />
           <ToggleButton
             active={showWireframe}
             onClick={onToggleWireframe}
             label="Wireframe"
-            icon={
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 12l10-7 10 7-10 7-10-7z" />
-                <path d="M12 5v14" />
-                <path d="M2 12h20" />
-              </svg>
-            }
+            icon={<span>🕸️</span>}
           />
+          {onToggleSolarStudy && (
+            <ToggleButton
+              active={isSolarStudyOpen}
+              onClick={onToggleSolarStudy}
+              label="Solar Study"
+              icon={<span>☀️</span>}
+            />
+          )}
         </div>
       </div>
 
       {/* Floor selector */}
       {totalFloors > 1 && (
         <div>
-          <p className="text-xs text-[var(--text-muted)] mb-2">Floor</p>
-          <div className="flex gap-1 bg-[var(--surface)] rounded-xl p-1">
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            Floor Level
+          </p>
+          <div className="flex gap-1 bg-white/5 rounded-xl p-1">
             {Array.from({ length: totalFloors }, (_, i) => (
               <button
                 key={i}
                 type="button"
                 onClick={() => onFloorChange(i)}
                 className={`
-                  flex-1 rounded-lg py-2 text-xs font-medium transition-all duration-200
+                  flex-1 rounded-lg py-1.5 text-xs font-medium transition-all duration-200
                   ${
                     currentFloor === i
-                      ? 'bg-[var(--accent)] text-white shadow-md shadow-blue-500/20'
-                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-raised)]'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                      : 'text-gray-400 hover:text-white hover:bg-white/5'
                   }
                 `}
               >
@@ -325,69 +333,58 @@ export default function ViewControls({
         </div>
       )}
 
-      {/* Actions: Export 3D Model & AR/VR */}
+      {/* Actions: Export Hub & AR/VR */}
       <div className="space-y-2 pt-2 border-t border-white/5">
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+          BIM & CAD Export Hub
+        </p>
+
         {onExportGLB && (
           <button
             type="button"
             onClick={onExportGLB}
-            className="
-              w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5
-              bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500
-              text-xs font-semibold text-white shadow-lg shadow-blue-500/25
-              transition-all duration-200
-            "
+            className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-xs font-semibold text-white shadow-lg shadow-blue-500/20 transition-all"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            Download 3D Model (.GLB)
+            <span>📥</span>
+            <span>Download 3D Model (.GLB)</span>
           </button>
         )}
 
-        {/* AR / VR button */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setShowComingSoon((p) => !p)}
-            className="
-              w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5
-              bg-purple-500/15 hover:bg-purple-500/25
-              border border-purple-500/30 hover:border-purple-400/50
-              text-xs font-medium text-purple-300 hover:text-purple-200
-              transition-all duration-200
-            "
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M2 8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" />
-              <path d="M6 12h.01" />
-              <path d="M18 12h.01" />
-              <path d="M12 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />
-              <path d="M9 16c0-2 1.5-3 3-3s3 1 3 3" />
-            </svg>
-            AR / VR Mode
-            <span className="bg-purple-500/30 text-purple-200 text-[9px] px-1.5 py-0.2 rounded-full font-semibold uppercase">
-              Soon
-            </span>
-          </button>
+        <div className="grid grid-cols-2 gap-2">
+          {onExportDXF && (
+            <button
+              type="button"
+              onClick={onExportDXF}
+              className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-gray-200 hover:text-white transition-all"
+            >
+              <span>📐</span>
+              <span>2D CAD (.DXF)</span>
+            </button>
+          )}
 
-          {/* Coming Soon tooltip */}
-          {showComingSoon && (
-            <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-50 animate-fade-in-up">
-              <div className="glass-strong rounded-xl px-4 py-3 shadow-xl max-w-[220px] text-center">
-                <p className="text-xs font-medium text-[var(--text-primary)] mb-1">
-                  🥽 AR/VR Meta Quest Ready
-                </p>
-                <p className="text-[10px] text-[var(--text-muted)] leading-relaxed">
-                  Export the .GLB model or view directly in Meta Quest Browser for immersive spatial walkthrough!
-                </p>
-              </div>
-              <div className="w-3 h-3 bg-[var(--surface-raised)] border-r border-b border-[var(--border)] rotate-45 mx-auto -mt-1.5" />
-            </div>
+          {onExportCSV && (
+            <button
+              type="button"
+              onClick={onExportCSV}
+              className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-gray-200 hover:text-white transition-all"
+            >
+              <span>📊</span>
+              <span>Schedule (.CSV)</span>
+            </button>
           )}
         </div>
+
+        {/* Spatial WebXR / AR Mode Button */}
+        {onOpenAR && (
+          <button
+            type="button"
+            onClick={onOpenAR}
+            className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-xs font-semibold text-purple-200 transition-all shadow-md shadow-purple-500/10"
+          >
+            <span>🥽</span>
+            <span>Launch WebXR & Mobile AR</span>
+          </button>
+        )}
       </div>
     </div>
   );

@@ -240,6 +240,20 @@ export interface CameraConfig {
   far: number;
 }
 
+export type FlooringPreset =
+  | 'scandinavian_oak'
+  | 'dark_walnut'
+  | 'carrara_marble'
+  | 'industrial_concrete'
+  | 'terracotta_stone';
+
+export interface SolarStudySettings {
+  enabled: boolean;
+  timeOfDay: number; // 6.0 to 20.0 (e.g. 14.5 = 14:30)
+  season: 'summer' | 'equinox' | 'winter';
+  latitude: number; // degrees (default 45)
+}
+
 /** Viewer state */
 export interface ViewerState {
   isLoading: boolean;
@@ -248,6 +262,8 @@ export interface ViewerState {
   selectedElement: string | null; // id of selected wall/door/window
   viewMode: 'perspective' | 'top' | 'front' | 'side' | 'first-person';
   lightingMode?: 'day' | 'golden_hour' | 'night';
+  flooringPreset?: FlooringPreset;
+  solarStudy?: SolarStudySettings;
   showLabels: boolean;
   showDimensions: boolean;
   showWireframe: boolean;

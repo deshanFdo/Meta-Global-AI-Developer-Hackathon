@@ -294,8 +294,9 @@ export async function POST(req: NextRequest) {
       base64Image = body.image || '';
       mimeType = body.mimeType || 'image/png';
 
-      if (body.isDemo || body.image === 'demo' || (base64Image && base64Image.length < 500)) {
+      if (body.isDemo || body.image === 'demo') {
         const mockAnalysis = getMockHouseAnalysis();
+        mockAnalysis.notes.unshift("SAMPLE DEMO: predefined geometry, not live Muse extraction.");
         return NextResponse.json<AnalyzeResponse>({
           success: true,
           analysis: mockAnalysis,
@@ -318,15 +319,10 @@ export async function POST(req: NextRequest) {
     // Check if META_API_KEY is configured
     const apiKey = process.env.META_API_KEY;
     if (!apiKey || apiKey.trim() === '' || apiKey.includes('your_meta_api_key_here')) {
-      console.warn('META_API_KEY is not configured. Serving high-fidelity architectural mock model.');
-      const mockAnalysis = getMockHouseAnalysis();
-      mockAnalysis.notes.unshift('💡 Demo Mode: Add META_API_KEY to .env.local for live Meta Muse Spark vision analysis.');
-
-      return NextResponse.json<AnalyzeResponse>({
-        success: true,
-        analysis: mockAnalysis,
-        processingTime: Date.now() - startTime,
-      });
+      return NextResponse.json({ success: false, error: 'Live analysis is not configured. Configure server credentials or use the labeled sample demo.' }, { status: 503 });
+    }
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(mimeType) || base64Image.length > 14 * 1024 * 1024 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64Image)) {
+      return NextResponse.json({ success: false, error: 'Provide a PNG, JPEG or WebP image up to 10 MB.' }, { status: 400 });
     }
 
     // Call live Meta AI API
@@ -338,28 +334,8 @@ export async function POST(req: NextRequest) {
       analysis,
       processingTime: Date.now() - startTime,
     });
-  } catch (err: unknown) {
-    console.error('Error in /api/analyze:', err);
-
-    // If API failed due to quota or rate limit, gracefully fallback with notification
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    if (errorMessage.includes('quota') || errorMessage.includes('rate limit') || errorMessage.includes('429')) {
-      const fallback = getMockHouseAnalysis();
-      fallback.notes.unshift(`⚠️ Meta API Quota Note: ${errorMessage}. Displaying architectural model fallback.`);
-      return NextResponse.json<AnalyzeResponse>({
-        success: true,
-        analysis: fallback,
-        processingTime: Date.now() - startTime,
-      });
-    }
-
-    return NextResponse.json<AnalyzeResponse>(
-      {
-        success: false,
-        error: errorMessage || 'An unexpected error occurred during floor plan analysis.',
-        processingTime: Date.now() - startTime,
-      },
-      { status: 500 },
-    );
+  } catch {
+    console.error('Floor plan analysis failed');
+    return NextResponse.json<AnalyzeResponse>({ success: false, error: 'Muse analysis failed. Please retry. Your upload has not been replaced with sample data.', processingTime: Date.now() - startTime }, { status: 502 });
   }
 }

@@ -19,14 +19,13 @@ const geistMono = localFont({
 export const metadata: Metadata = {
   title: 'BlueprintTo3D — AI-Powered Floor Plan to 3D Model',
   description:
-    'Upload a 2D floor plan or blueprint and instantly generate an interactive 3D house model using Meta AI (Muse Spark, SAM 3.1, Muse Image) and Three.js. Built for the Meta Global AI Developer Hackathon 2026.',
+    'Upload a 2D floor plan or blueprint and instantly generate an interactive 3D house model using Meta AI (Muse Spark) and Three.js. Built for the Meta Global AI Developer Hackathon 2026.',
   keywords: [
     'floor plan',
     'blueprint',
     '3D model',
     'Meta AI',
     'Muse Spark',
-    'SAM 3.1',
     'Three.js',
     'hackathon',
   ],

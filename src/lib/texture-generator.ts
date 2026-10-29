@@ -223,5 +223,170 @@ export class ProceduralTextureGenerator {
     this.cache.set(key, texture);
     return texture;
   }
+
+  /**
+   * Generates an Italian Dark Walnut Herringbone parquet texture.
+   */
+  public static getDarkWalnutTexture(): THREE.CanvasTexture | null {
+    if (typeof document === 'undefined') return null;
+    const key = 'parquet_walnut';
+    if (this.cache.has(key)) return this.cache.get(key)!;
+
+    const size = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // Rich deep espresso walnut base
+    ctx.fillStyle = '#3A281A';
+    ctx.fillRect(0, 0, size, size);
+
+    const plankH = size / 8;
+    const tones = ['#3E2A1C', '#342316', '#432E1F', '#2E1E13'];
+
+    for (let i = 0; i < 8; i++) {
+      const y = i * plankH;
+      ctx.fillStyle = tones[i % tones.length];
+      ctx.fillRect(0, y, size, plankH);
+
+      // Fine walnut grain
+      ctx.strokeStyle = 'rgba(20, 12, 6, 0.35)';
+      ctx.lineWidth = 1;
+      for (let g = 0; g < 14; g++) {
+        const gy = y + (g / 14) * plankH;
+        ctx.beginPath();
+        ctx.moveTo(0, gy);
+        ctx.bezierCurveTo(size * 0.4, gy + 3, size * 0.6, gy - 2, size, gy);
+        ctx.stroke();
+      }
+
+      // Bevel seam
+      ctx.strokeStyle = 'rgba(10, 6, 3, 0.6)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(size, y);
+      ctx.stroke();
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(4, 4);
+    this.cache.set(key, texture);
+    return texture;
+  }
+
+  /**
+   * Generates a Polished Carrara White Marble texture with realistic veining.
+   */
+  public static getCarraraMarbleTexture(): THREE.CanvasTexture | null {
+    if (typeof document === 'undefined') return null;
+    const key = 'marble_carrara';
+    if (this.cache.has(key)) return this.cache.get(key)!;
+
+    const size = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // Clean luminous white-gray marble slab
+    ctx.fillStyle = '#F5F6F8';
+    ctx.fillRect(0, 0, size, size);
+
+    // Dynamic diagonal smoke veins
+    const veins = [
+      { start: [0, 80], cp1: [180, 200], cp2: [320, 140], end: [512, 380], width: 3, alpha: 0.16 },
+      { start: [100, 0], cp1: [240, 160], cp2: [380, 340], end: [460, 512], width: 2, alpha: 0.12 },
+      { start: [0, 360], cp1: [200, 380], cp2: [340, 420], end: [512, 480], width: 2.5, alpha: 0.14 },
+    ];
+
+    for (const v of veins) {
+      ctx.strokeStyle = `rgba(120, 130, 145, ${v.alpha})`;
+      ctx.lineWidth = v.width;
+      ctx.beginPath();
+      ctx.moveTo(v.start[0], v.start[1]);
+      ctx.bezierCurveTo(v.cp1[0], v.cp1[1], v.cp2[0], v.cp2[1], v.end[0], v.end[1]);
+      ctx.stroke();
+    }
+
+    // High-gloss subtle tile joints (600x600mm format)
+    ctx.strokeStyle = 'rgba(180, 185, 195, 0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(0, 0, size, size);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(3, 3);
+    this.cache.set(key, texture);
+    return texture;
+  }
+
+  /**
+   * Generates a modern Honed Industrial Concrete screed texture.
+   */
+  public static getConcreteTexture(): THREE.CanvasTexture | null {
+    if (typeof document === 'undefined') return null;
+    const key = 'concrete_screed';
+    if (this.cache.has(key)) return this.cache.get(key)!;
+
+    const size = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // Neutral architectural concrete grey
+    ctx.fillStyle = '#9C9FA5';
+    ctx.fillRect(0, 0, size, size);
+
+    // Fine mineral speckling and micro-pores
+    for (let i = 0; i < 3000; i++) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      const dark = Math.random() > 0.5;
+      ctx.fillStyle = dark ? 'rgba(40,42,48,0.1)' : 'rgba(255,255,255,0.08)';
+      ctx.fillRect(x, y, 1.5, 1.5);
+    }
+
+    // Subtle trowel marks
+    ctx.strokeStyle = 'rgba(70, 75, 85, 0.08)';
+    ctx.lineWidth = 40;
+    ctx.beginPath();
+    ctx.arc(size * 0.3, size * 0.4, 200, 0, Math.PI * 0.6);
+    ctx.stroke();
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(4, 4);
+    this.cache.set(key, texture);
+    return texture;
+  }
+
+  /**
+   * Returns texture based on user's selected finish preset.
+   */
+  public static getTextureByPreset(preset: string): THREE.CanvasTexture | null {
+    switch (preset) {
+      case 'dark_walnut':
+        return this.getDarkWalnutTexture();
+      case 'carrara_marble':
+        return this.getCarraraMarbleTexture();
+      case 'industrial_concrete':
+        return this.getConcreteTexture();
+      case 'terracotta_stone':
+        return this.getTerracePaverTexture();
+      case 'scandinavian_oak':
+      default:
+        return this.getParquetTexture();
+    }
+  }
 }
 
