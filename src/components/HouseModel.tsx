@@ -192,8 +192,20 @@ export default function HouseModel({
             return;
           }
 
-          if (target && target.name && onElementClick) {
-            onElementClick(target.name.replace(/^(floor|wall|door|window)_/, ''));
+          if (target && onElementClick) {
+            if (target.name?.startsWith('roof') || target.parent?.name === 'Roof') {
+              onElementClick('roof');
+              return;
+            }
+
+            const elementId =
+              target.userData?.elementId ||
+              target.parent?.userData?.elementId ||
+              target.name.replace(/^(floor|wall|door|window)_/, '');
+
+            if (elementId) {
+              onElementClick(elementId);
+            }
           }
         }}
       />

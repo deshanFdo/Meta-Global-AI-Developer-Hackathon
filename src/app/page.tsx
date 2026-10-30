@@ -17,6 +17,7 @@ import PipelineProgress from '@/components/PipelineProgress';
 import ViewControls from '@/components/ViewControls';
 import ArchitectureInspector from '@/components/ArchitectureInspector';
 import FinishCustomizer from '@/components/FinishCustomizer';
+import ArchitecturalEditor from '@/components/ArchitecturalEditor';
 import { exportHouseToGLB } from '@/lib/export-3d';
 import { exportHouseToDXF, exportHouseScheduleCSV } from '@/lib/dxf-exporter';
 import SolarStudyControl from '@/components/SolarStudyControl';
@@ -97,6 +98,7 @@ export default function Home() {
   const [preview, setPreview] = useState<string | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [isFinishCustomizerOpen, setIsFinishCustomizerOpen] = useState(false);
+  const [isArchitecturalEditorOpen, setIsArchitecturalEditorOpen] = useState(false);
   const [finishes, setFinishes] = useState<FinishSelectionState>(INITIAL_FINISHES);
   const [lightingMode, setLightingMode] = useState<'day' | 'golden_hour' | 'night'>('day');
   const [flooringPreset, setFlooringPreset] = useState<FlooringPreset>('scandinavian_oak');
@@ -376,6 +378,21 @@ export default function Home() {
             {hasAnalysis && (
               <button
                 type="button"
+                onClick={() => setIsArchitecturalEditorOpen((p) => !p)}
+                className={`text-xs border px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 font-medium ${
+                  isArchitecturalEditorOpen
+                    ? 'bg-amber-600 text-white border-amber-500 shadow-md shadow-amber-500/30'
+                    : 'bg-white/5 hover:bg-white/10 text-amber-300 border-amber-500/30'
+                }`}
+              >
+                <span>✏️</span>
+                <span>CAD Customizer</span>
+              </button>
+            )}
+
+            {hasAnalysis && (
+              <button
+                type="button"
                 onClick={() => setIsFinishCustomizerOpen((p) => !p)}
                 className={`text-xs border px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 font-medium ${
                   isFinishCustomizerOpen
@@ -511,7 +528,10 @@ export default function Home() {
               isSoundEnabled={isSoundEnabled}
               arScale={arScale}
               selectedElement={viewer.selectedElement}
-              onElementClick={(id) => setViewer((prev) => ({ ...prev, selectedElement: id }))}
+              onElementClick={(id) => {
+                setViewer((prev) => ({ ...prev, selectedElement: id }));
+                setIsArchitecturalEditorOpen(true);
+              }}
               onToggleMeasuring={() => setIsMeasuring((p) => !p)}
               onToggleMinimap={() => setShowMinimap((p) => !p)}
               onToggleSound={handleToggleSound}
@@ -650,6 +670,20 @@ export default function Home() {
               onClose={() => setIsFinishCustomizerOpen(false)}
               selectedRoomId={viewer.selectedElement}
               onSelectRoom={(roomId) => setViewer((prev) => ({ ...prev, selectedElement: roomId }))}
+            />
+          )}
+
+          {/* 3D CAD Architectural Customizer & Builder Drawer */}
+          {viewer.analysis && (
+            <ArchitecturalEditor
+              analysis={viewer.analysis}
+              selectedElementId={viewer.selectedElement}
+              isOpen={isArchitecturalEditorOpen}
+              onClose={() => setIsArchitecturalEditorOpen(false)}
+              onSelectElement={(id) => setViewer((prev) => ({ ...prev, selectedElement: id }))}
+              onUpdateAnalysis={(updated) =>
+                setViewer((prev) => ({ ...prev, analysis: updated }))
+              }
             />
           )}
 
