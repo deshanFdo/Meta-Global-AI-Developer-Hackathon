@@ -15,7 +15,7 @@ import type { CameraPreset, LightingMode } from "./Viewer3D";
 const TOOLS: Array<{ id: EditTool; label: string; hint: string }> = [
   { id: "select", label: "Select", hint: "Orbit, open doors and windows by clicking them." },
   { id: "move", label: "Move", hint: "Drag walls (openings ride along) or furniture." },
-  { id: "add-wall", label: "Add wall", hint: "Click two floor points. Snaps to 0.25 m and 15° angles." },
+  { id: "add-wall", label: "Add wall", hint: "Click two floor points. Snaps to grid, 15° angles and existing endpoints." },
   { id: "add-door", label: "Add door", hint: "Click a wall where the door should go." },
   { id: "add-window", label: "Add window", hint: "Click a wall where the window should go." },
   { id: "add-furniture", label: "Add decor", hint: "Pick a piece below, then click the floor. R rotates." },

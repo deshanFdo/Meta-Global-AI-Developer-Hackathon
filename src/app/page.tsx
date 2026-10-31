@@ -9,6 +9,7 @@ import { doorSound } from "@/lib/sound";
 import { downloadText, exportGroupToGLB, houseToCSV, houseToDXF } from "@/lib/exporters";
 import { clearAutosave, loadAutosave, saveAutosave } from "@/lib/project-store";
 import { VARIANT_OPTIONS, type CatalogEntry } from "@/lib/furnish";
+import { splitWallsAtJunctions } from "@/lib/walls";
 import UploadCard, { type ArchetypeKind } from "@/components/UploadCard";
 import PlanCompare from "@/components/PlanCompare";
 import { AskTab, BuildTab, ExportTab, LookTab, PlanTab, VerifyTab, type QaMessage, type SparkCounts } from "@/components/panels";
@@ -660,15 +661,17 @@ export default function Home(): React.JSX.Element {
         color: "#F5F5F0",
         isExterior: false,
       };
-      // Grow the bounds if the wall extends past them.
+      const withWall: HouseAnalysis = { ...prev, walls: [...prev.walls, wall] };
+      // Split the whole graph so the new wall (and any wall it crosses) breaks at junctions.
+      const split = splitWallsAtJunctions(withWall);
       const maxX = Math.max(prev.metadata.overallWidth, start.x, end.x);
       const maxY = Math.max(prev.metadata.overallDepth, start.y, end.y);
       return {
-        ...prev,
-        metadata: { ...prev.metadata, overallWidth: maxX, overallDepth: maxY },
-        walls: [...prev.walls, wall],
+        ...split,
+        metadata: { ...split.metadata, overallWidth: maxX, overallDepth: maxY },
       };
     });
+    setSelection(null);
   }, [commit]);
 
   const handleAddOpening = useCallback(
@@ -763,18 +766,42 @@ export default function Home(): React.JSX.Element {
   const handleMoveWall = useCallback((id: string, dx: number, dy: number) => {
     const current = analysisRef.current;
     if (!current || (dx === 0 && dy === 0)) return;
+    const wall = current.walls.find((w) => w.id === id);
+    if (!wall) return;
+    // Magnetic endpoints: snap the translation so a moved endpoint within 0.35 m
+    // of another wall's endpoint lands exactly on it (easy reconnecting).
+    let mx = dx;
+    let my = dy;
+    const moved = {
+      start: { x: wall.start.x + dx, y: wall.start.y + dy },
+      end: { x: wall.end.x + dx, y: wall.end.y + dy },
+    };
+    let best = 0.35;
+    for (const other of current.walls) {
+      if (other.id === id) continue;
+      for (const a of [moved.start, moved.end]) {
+        for (const b of [other.start, other.end]) {
+          const dist = Math.hypot(a.x - b.x, a.y - b.y);
+          if (dist < best) {
+            best = dist;
+            mx = dx + (b.x - a.x);
+            my = dy + (b.y - a.y);
+          }
+        }
+      }
+    }
     setAnalysis({
       ...current,
       walls: current.walls.map((w) =>
         w.id === id
-          ? { ...w, start: { x: w.start.x + dx, y: w.start.y + dy }, end: { x: w.end.x + dx, y: w.end.y + dy } }
+          ? { ...w, start: { x: w.start.x + mx, y: w.start.y + my }, end: { x: w.end.x + mx, y: w.end.y + my } }
           : w
       ),
       doors: current.doors.map((d) =>
-        d.wallId === id ? { ...d, position: { x: d.position.x + dx, y: d.position.y + dy } } : d
+        d.wallId === id ? { ...d, position: { x: d.position.x + mx, y: d.position.y + my } } : d
       ),
       windows: current.windows.map((w) =>
-        w.wallId === id ? { ...w, position: { x: w.position.x + dx, y: w.position.y + dy } } : w
+        w.wallId === id ? { ...w, position: { x: w.position.x + mx, y: w.position.y + my } } : w
       ),
     });
     setEdited(true);
@@ -816,7 +843,7 @@ export default function Home(): React.JSX.Element {
 
   const handleImportProject = useCallback((data: { analysis: HouseAnalysis; open: OpenState; source: AnalysisSource }) => {
     resetForNewAnalysis();
-    setAnalysis(data.analysis);
+    setAnalysis(splitWallsAtJunctions(data.analysis));
     setOpenMap(data.open ?? {});
     setSource(data.source);
     setModel("project file");

@@ -271,7 +271,7 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
             </Row>
           </div>
           <button type="button" onClick={() => { onDelete("wall", wall.id); onClose(); }} className="btn-ghost w-full px-3 py-1.5 text-[11px] text-red-300">
-            Delete wall + its doors/windows
+            Delete this segment (+ its openings)
           </button>
           <p className="text-[11px] text-[var(--muted)]">
             Length {Math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y).toFixed(2)} m

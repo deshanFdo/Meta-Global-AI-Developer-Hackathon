@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { analyzeFloorPlan, auditFurniture, hasMetaKey, MetaError, MUSE_SPARK_MODEL } from "@/lib/meta";
+import { splitWallsAtJunctions } from "@/lib/walls";
 import {
   getEcoCabinAnalysis,
   getScandinavianVillaAnalysis,
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
         success: true,
         source: "sample",
         model: "prebuilt-archetype (no inference)",
-        analysis,
+        analysis: splitWallsAtJunctions(analysis),
         processingTime: Date.now() - started,
       });
     }
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Image is too large. Use a PNG, JPEG or WebP up to 10 MB." }, { status: 400 });
     }
 
-    const analysis = await analyzeFloorPlan(clean, body.mimeType);
+    const analysis = splitWallsAtJunctions(await analyzeFloorPlan(clean, body.mimeType));
     let deepRan = false;
     if (body.deep) {
       try {

@@ -385,9 +385,25 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
     return { x: snapQ(a.x + Math.cos(ang) * len), y: snapQ(a.y + Math.sin(ang) * len) };
   }, []);
 
+  /** Snap a point onto a nearby wall endpoint (0.3 m magnet) for easy connections. */
+  const magnetize = useCallback((p: { x: number; y: number }): { x: number; y: number } => {
+    let best: { x: number; y: number } | null = null;
+    let bestDist = 0.3;
+    for (const wall of analysis.walls) {
+      for (const end of [wall.start, wall.end]) {
+        const dist = Math.hypot(p.x - end.x, p.y - end.y);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = { x: end.x, y: end.y };
+        }
+      }
+    }
+    return best ?? p;
+  }, [analysis]);
+
   const floorTool = editTool === "add-wall" || editTool === "move" || editTool === "measure" || editTool === "add-furniture";
 
-  const rubberEnd = pendingStart && hoverPlan ? snapWallEnd(pendingStart, hoverPlan) : null;
+  const rubberEnd = pendingStart && hoverPlan ? magnetize(snapWallEnd(pendingStart, hoverPlan)) : null;
 
   // ---- sun: explicit hour overrides the lighting preset ----
   const sun = useMemo(() => {
@@ -486,9 +502,9 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
             const p = toPlan(e.point.x, e.point.z);
             const snapped = { x: snapQ(p.x), y: snapQ(p.y) };
             if (editTool === "add-wall") {
-              if (!pendingStart) setPendingStart(snapped);
+              if (!pendingStart) setPendingStart(magnetize(snapped));
               else {
-                onAddWall(pendingStart, snapWallEnd(pendingStart, snapped));
+                onAddWall(pendingStart, magnetize(snapWallEnd(pendingStart, snapped)));
                 setPendingStart(null);
               }
             } else if (editTool === "add-furniture") {
