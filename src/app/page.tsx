@@ -28,6 +28,7 @@ const Viewer3D = dynamic(() => import("@/components/Viewer3D"), {
 const WalkMode = dynamic(() => import("@/components/WalkMode"), { ssr: false });
 const VRWalk = dynamic(() => import("@/components/VRWalk"), { ssr: false });
 const ARModal = dynamic(() => import("@/components/ARModal"), { ssr: false });
+const TourMode = dynamic(() => import("@/components/TourMode"), { ssr: false });
 
 type Tab = "plan" | "build" | "ask" | "look" | "verify" | "export";
 
@@ -170,6 +171,7 @@ export default function Home(): React.JSX.Element {
   const [walkOpen, setWalkOpen] = useState(false);
   const [arOpen, setArOpen] = useState(false);
   const [vrOpen, setVrOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const [openMap, setOpenMap] = useState<OpenState>({});
   const [autoRotate, setAutoRotate] = useState(false);
   const [editTool, setEditTool] = useState<EditTool>("select");
@@ -852,6 +854,10 @@ export default function Home(): React.JSX.Element {
     setRestoredNote(null);
   }, [resetForNewAnalysis]);
 
+  const handleSetOpen = useCallback((patch: OpenState) => {
+    setOpenMap((prev) => ({ ...prev, ...patch }));
+  }, []);
+
   const handleToggleOpen = useCallback((kind: "door" | "window", id: string) => {
     if (!analysis) return;
     const style =
@@ -1108,6 +1114,9 @@ export default function Home(): React.JSX.Element {
             )}
             {analysis && (
               <div className="absolute right-3 top-3 z-10 flex gap-2">
+                <button type="button" onClick={() => setTourOpen(true)} className="rounded-lg bg-blue-700/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">
+                  Play tour
+                </button>
                 <button type="button" onClick={() => { setWalkOpen(true); setWalkVisited(true); }} className="rounded-lg bg-black/65 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black/85">
                   Walk inside
                 </button>
@@ -1129,6 +1138,26 @@ export default function Home(): React.JSX.Element {
         certifies structural safety or code compliance. Cost figures are placeholder demo rates.
       </footer>
 
+      {tourOpen && analysis && (
+        <TourMode
+          analysis={analysis}
+          textures={textures}
+          open={openMap}
+          onSetOpen={handleSetOpen}
+          showRoof={showRoof}
+          onShowRoof={setShowRoof}
+          lighting={lighting}
+          onLighting={setLighting}
+          sunHour={sunHour}
+          onSunHour={setSunHour}
+          onClose={() => setTourOpen(false)}
+          onWalk={() => {
+            setTourOpen(false);
+            setWalkOpen(true);
+            setWalkVisited(true);
+          }}
+        />
+      )}
       {walkOpen && analysis && (
         <WalkMode
           analysis={analysis}

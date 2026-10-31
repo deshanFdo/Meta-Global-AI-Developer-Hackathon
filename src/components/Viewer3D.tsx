@@ -102,7 +102,7 @@ function seededRandom(seed: number): () => number {
 }
 
 /** Ground, trees, drifting clouds and night stars around the house. */
-function EnvironmentDressing({ w, d, night }: { w: number; d: number; night: boolean }): React.JSX.Element {
+export function EnvironmentDressing({ w, d, night }: { w: number; d: number; night: boolean }): React.JSX.Element {
   const clouds = useRef<THREE.Group>(null);
 
   const trees = useMemo(() => {
@@ -205,7 +205,7 @@ function EnvironmentDressing({ w, d, night }: { w: number; d: number; night: boo
   );
 }
 
-const LIGHTS: Record<LightingMode, { bg: string; sun: string; intensity: number; ambient: number; elevation: number }> = {
+export const LIGHTS: Record<LightingMode, { bg: string; sun: string; intensity: number; ambient: number; elevation: number }> = {
   day: { bg: "#0d1220", sun: "#ffffff", intensity: 2.4, ambient: 0.75, elevation: 38 },
   golden: { bg: "#191221", sun: "#ffb45e", intensity: 2.0, ambient: 0.5, elevation: 14 },
   night: { bg: "#05070f", sun: "#9db8ff", intensity: 0.7, ambient: 0.3, elevation: 30 },
@@ -631,8 +631,10 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
           <pointLight key={l.id} position={[l.x, l.y, l.z]} intensity={10} distance={8} decay={2} color="#ffcf96" />
         ))}
       {showLabels &&
-        labels.map((l) => (
-          <Html key={l.id} position={[l.x, 0.35, l.z]} center distanceFactor={22} style={{ pointerEvents: "none" }}>
+        labels
+          .filter((l) => l.area >= 6)
+          .map((l) => (
+            <Html key={l.id} position={[l.x, 0.35, l.z]} center distanceFactor={22} occlude style={{ pointerEvents: "none" }}>
             <div
               style={{
                 background: "rgba(10,12,20,0.78)",
