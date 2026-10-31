@@ -1,13 +1,13 @@
 {
   "name": "blueprint-to-3d",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "analyze:cli": "node scripts/meta-muse-cli.mjs"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@react-three/drei": "^9.122.0",
@@ -17,7 +17,8 @@
     "openai": "^6.49.0",
     "react": "^18",
     "react-dom": "^18",
-    "three": "^0.186.1"
+    "three": "^0.186.1",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20",
