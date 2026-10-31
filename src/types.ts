@@ -100,19 +100,27 @@ export interface Staircase {
 export type FurnitureType =
   | "bed_double"
   | "bed_single"
+  | "bed_king"
   | "sofa"
+  | "armchair"
   | "dining_table"
   | "chair"
+  | "office_chair"
   | "kitchen_counter"
   | "toilet"
   | "bathtub"
   | "sink"
+  | "sink_vanity"
+  | "shower"
   | "desk"
   | "wardrobe"
+  | "bookshelf"
   | "coffee_table"
   | "nightstand"
   | "plant"
   | "tv_unit"
+  | "floor_lamp"
+  | "rug"
   | "furnace"
   | "washing_machine"
   | "column";
@@ -125,6 +133,8 @@ export interface FurnitureItem {
   width: number;
   depth: number;
   height: number;
+  /** Builder variant, e.g. sofa "2-seat" | "3-seat". */
+  variant?: string;
   roomId?: string;
   room?: string;
   name?: string;
@@ -156,7 +166,7 @@ export interface HouseAnalysis {
 }
 
 /** Where the current analysis came from. Always shown in the UI. */
-export type AnalysisSource = "live" | "sample" | "file";
+export type AnalysisSource = "live" | "sample" | "file" | "blank";
 
 export interface GeneratedTextures {
   facade?: string; // data URL
@@ -188,4 +198,4 @@ export type PipelineStage =
   | "error";
 
 /** Orbit-view editor tool. */
-export type EditTool = "select" | "move" | "add-wall" | "add-door" | "add-window" | "measure";
+export type EditTool = "select" | "move" | "add-wall" | "add-door" | "add-window" | "add-furniture" | "measure";

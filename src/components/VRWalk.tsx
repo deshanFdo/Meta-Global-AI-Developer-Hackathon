@@ -6,6 +6,7 @@ import { Text } from "@react-three/drei";
 import * as THREE from "three";
 import type { GeneratedTextures, HouseAnalysis } from "@/types";
 import { buildHouseGroup, disposeGroup, findTag, isOpenable, openKey, type ElementTag, type OpenState } from "@/lib/geometry";
+import { VARIANT_OPTIONS } from "@/lib/furnish";
 import { resolveCollision, spawnPose } from "@/lib/collide";
 import { useTextureMaps } from "@/lib/useTextureMaps";
 import InteractiveAnimator from "./InteractiveAnimator";
@@ -112,10 +113,10 @@ function VRScene({ analysis, textures, open, onToggleOpen, onPatch, onGl }: Scen
       }
     };
 
-    // Trigger: open/close doors and windows, inspect walls and roof.
+    // Trigger: open/close doors and windows, rotate furniture, inspect walls and roof.
     const onTrigger = (controller: THREE.Group, tag: ElementTag, point: THREE.Vector3): void => {
       void controller;
-      const { analysis: a, onToggleOpen: toggle, open: openMap } = live.current;
+      const { analysis: a, onToggleOpen: toggle, onPatch: patch, open: openMap } = live.current;
       if (tag.kind === "door" || tag.kind === "window") {
         const style =
           tag.kind === "door"
@@ -130,6 +131,11 @@ function VRScene({ analysis, textures, open, onToggleOpen, onPatch, onGl }: Scen
         flash(`${tag.id} → ${willOpen ? "open" : "closed"}`, point);
       } else if (tag.kind === "roof") {
         flash(`roof · ${a.roof.type} · ${a.roof.pitch.toFixed(0)}° pitch`, point);
+      } else if (tag.kind === "furniture") {
+        const current = (a.furniture ?? []).find((f) => f.id === tag.id)?.rotation ?? 0;
+        const next = (current + 45) % 360;
+        patch("furniture", tag.id, { rotation: next });
+        flash(`${tag.id} → rotated ${next}°`, point);
       } else {
         const wall = a.walls.find((w) => w.id === tag.id);
         const len = wall ? Math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y).toFixed(1) : "?";
@@ -166,6 +172,19 @@ function VRScene({ analysis, textures, open, onToggleOpen, onPatch, onGl }: Scen
           const next = nextIn(ROOF_ORDER, a.roof.type);
           patch("roof", "roof", { type: next });
           flash(`roof → ${next}`, hit.point);
+        } else if (tag.kind === "furniture") {
+          const item = (a.furniture ?? []).find((f) => f.id === tag.id);
+          const options = item ? (VARIANT_OPTIONS[item.type] ?? []) : [];
+          if (item && options.length > 0) {
+            const next = nextIn(options, item.variant ?? options[0]);
+            patch("furniture", tag.id, { variant: next });
+            flash(`${tag.id} → ${next}`, hit.point);
+          } else {
+            const current = item?.rotation ?? 0;
+            const next = (current + 45) % 360;
+            patch("furniture", tag.id, { rotation: next });
+            flash(`${tag.id} → rotated ${next}°`, hit.point);
+          }
         }
         return;
       }

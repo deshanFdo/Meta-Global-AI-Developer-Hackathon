@@ -37,10 +37,13 @@ npm run build
 
 ## Editor
 
-- Build tab: select / move-wall / add-wall / add-door / add-window / measure tools, undo + redo (Ctrl+Z/Y),
-  element lists with delete. New walls snap to 0.25 m and 15° angles.
+- Build tab: select / move / add-wall / add-door / add-window / add-decor / measure tools, undo + redo
+  (Ctrl+Z/Y), element lists with delete. New walls snap to 0.25 m and 15° angles.
+- Furniture catalog (28 pieces): sofas (2/3-seat), beds, dining sets, bath, office and decor. Click to place
+  with a live ghost preview (R rotates), then drag, recolor, resize or swap variants.
 - Everything is editable: wall geometry, height and thickness, all opening styles and dimensions, roof shape
   and finishes. Wall delete cascades to its openings; rooms keep no stale references.
+- Start from a blank canvas to design from scratch, or from AI extraction.
 - Projects autosave to the browser, with named slots and JSON export/import in the Export tab.
 
 ## Current limits

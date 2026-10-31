@@ -7,6 +7,7 @@ export type ArchetypeKind = "villa" | "loft" | "eco_cabin";
 interface Props {
   onFile: (file: File) => void;
   onSample: (kind: ArchetypeKind) => void;
+  onBlank: () => void;
   busy: boolean;
   deep: boolean;
   setDeep: (v: boolean) => void;
@@ -18,7 +19,7 @@ const SAMPLES: Array<{ kind: ArchetypeKind; title: string; detail: string }> = [
   { kind: "eco_cabin", title: "Eco Cabin", detail: "42.0 m² · timber · deck" },
 ];
 
-export default function UploadCard({ onFile, onSample, busy, deep, setDeep }: Props): React.JSX.Element {
+export default function UploadCard({ onFile, onSample, onBlank, busy, deep, setDeep }: Props): React.JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -72,6 +73,9 @@ export default function UploadCard({ onFile, onSample, busy, deep, setDeep }: Pr
           </button>
         ))}
       </div>
+      <button type="button" disabled={busy} onClick={onBlank} className="btn-ghost mt-2 w-full px-2 py-2 text-xs">
+        Start from a blank canvas instead
+      </button>
     </div>
   );
 }

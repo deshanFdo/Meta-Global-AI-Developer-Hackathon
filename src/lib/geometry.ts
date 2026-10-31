@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Door, HouseAnalysis, PlanWindow, Wall } from "@/types";
+import { buildFurniture, nominalSize } from "./furnish";
 
 // ---------------------------------------------------------------------------
 // buildHouseGroup: HouseAnalysis -> THREE.Group
@@ -77,7 +78,7 @@ export function updatePivots(group: THREE.Group, dt: number): void {
 
 /** Tag attached to selectable meshes so walk/VR modes can identify elements. */
 export interface ElementTag {
-  kind: "wall" | "door" | "window" | "roof";
+  kind: "wall" | "door" | "window" | "furniture" | "roof";
   id: string;
 }
 
@@ -235,7 +236,7 @@ export function buildHouseGroup(analysis: HouseAnalysis, opts: GeometryOptions):
         seg(span.t0, span.t1, 0, span.sill); // sill wall
         seg(span.t0, span.t1, span.top, WH); // header
       }
-      dressOpening(group, wall, span, rotY, toX, toZ, matGlass, opts.open ?? {});
+      dressOpening(group, wall, span, rotY, toX, toZ, matGlass, opts.open ?? {}, baySide(wall, rotY, W, D));
       cursor = span.t1;
     }
     seg(cursor, len, 0, WH);
@@ -264,7 +265,29 @@ export function buildHouseGroup(analysis: HouseAnalysis, opts: GeometryOptions):
   // ---- roof ----
   if (opts.showRoof) buildRoof(group, analysis, matRoof);
 
+  // ---- furniture (builders are true-scale; scaling is relative) ----
+  for (const item of analysis.furniture ?? []) {
+    const g = buildFurniture(item.type, item.variant, item.color);
+    g.position.set(toX(item.position.x), 0, toZ(item.position.y));
+    g.rotation.y = (item.rotation * Math.PI) / 180;
+    tag(g, "furniture", item.id);
+    const nom = nominalSize(item.type, item.variant);
+    const axis = (v: number, n: number): number =>
+      Number.isFinite(v) && v > 0 && n > 0 ? Math.max(0.2, Math.min(6, v / n)) : 1;
+    g.scale.set(axis(item.width, nom.w), axis(item.height, nom.h), axis(item.depth, nom.d));
+    group.add(g);
+  }
+
   return group;
+}
+
+/** Which local-Z side of a wall faces away from the house center (world coords). */
+function baySide(wall: Wall, rotY: number, w: number, d: number): 1 | -1 {
+  const midX = (wall.start.x + wall.end.x) / 2 - w / 2;
+  const midZ = (wall.start.y + wall.end.y) / 2 - d / 2;
+  const lzx = Math.sin(rotY);
+  const lzz = Math.cos(rotY);
+  return lzx * midX + lzz * midZ >= 0 ? 1 : -1;
 }
 
 function dressOpening(
@@ -275,7 +298,9 @@ function dressOpening(
   toX: (x: number) => number,
   toZ: (y: number) => number,
   matGlass: THREE.Material,
-  open: OpenState
+  open: OpenState,
+  /** +1/-1: which local-Z side faces away from the house (for projecting bays). */
+  bayDir: 1 | -1
 ): void {
   const dx = wall.end.x - wall.start.x;
   const dy = wall.end.y - wall.start.y;
@@ -305,10 +330,12 @@ function dressOpening(
     z: number,
     sx: number,
     sy: number,
-    sz: number
+    sz: number,
+    ry = 0
   ): THREE.Mesh => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
     mesh.position.set(x, y, z);
+    mesh.rotation.y = ry;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     tag(mesh, tagInfo.kind, tagInfo.id);
@@ -429,61 +456,117 @@ function dressOpening(
     const win = span.ref as PlanWindow;
     const h = span.top - span.sill;
     const cy = span.sill + h / 2;
-    box(group, frameMat, cx, cy, cz, w + 0.08, h + 0.08, t * 0.6, rotY, tagInfo);
-    if (win.style === "casement") {
-      const edge = along(-w / 2 + 0.04);
-      const pivot = new THREE.Group();
-      pivot.position.set(edge.x, span.sill, edge.z);
-      pivot.rotation.y = rotY;
-      group.add(pivot);
-      leaf(pivot, matGlass, w / 2, h / 2, 0, w, h, 0.04);
-      leaf(pivot, frameMat, w / 2, h / 2, 0, 0.05, h, 0.05);
-      const openRotY = rotY + 1.1;
-      pivots.push({
-        kind: "window", id: win.id, node: pivot, mode: "hinge",
-        closedRotY: rotY, openRotY, closedPos: pivot.position.clone(), openPos: pivot.position.clone(),
-        current: startAt, target: startAt,
-      });
-      if (startAt === 1) pivot.rotation.y = openRotY;
+    const register = (pivot: {
+      kind: "door" | "window"; id: string; node: THREE.Object3D; mode: "hinge" | "slide";
+      closedRotY: number; openRotY: number; closedPos: THREE.Vector3; openPos: THREE.Vector3;
+    }): void => {
+      pivots.push({ ...pivot, current: startAt, target: startAt });
+      if (startAt === 1) {
+        if (pivot.mode === "hinge") pivot.node.rotation.y = pivot.openRotY;
+        else pivot.node.position.copy(pivot.openPos);
+      }
+    };
+
+    if (win.style === "fixed") {
+      // Slim modern frame, one large lite, protruding sill ledge.
+      box(group, frameMat, cx, cy, cz, w + 0.1, h + 0.1, t * 0.55, rotY, tagInfo);
+      box(group, matGlass, cx, cy, cz, w, h, 0.04, rotY, tagInfo);
+      box(group, frameMat, cx, span.sill - 0.05, cz, w + 0.18, 0.07, t * 0.55 + 0.12, rotY, tagInfo);
+    } else if (win.style === "casement") {
+      // Twin sashes hinged at the outer edges + handles.
+      box(group, frameMat, cx, cy, cz, w + 0.08, h + 0.08, t * 0.6, rotY, tagInfo);
+      const paneW = w / 2 - 0.02;
+      for (const side of [-1, 1] as const) {
+        const edge = along((side * (w / 2 - 0.04)));
+        const pivot = new THREE.Group();
+        pivot.position.set(edge.x, span.sill, edge.z);
+        pivot.rotation.y = rotY;
+        group.add(pivot);
+        const inward = side < 0 ? 1 : -1; // glass extends from the hinge toward the middle
+        leaf(pivot, matGlass, inward * (paneW / 2), h / 2, 0, paneW, h, 0.04);
+        leaf(pivot, frameMat, inward * (paneW - 0.06), h / 2, 0, 0.04, 0.22, 0.06);
+        register({
+          kind: "window", id: win.id, node: pivot, mode: "hinge",
+          closedRotY: rotY, openRotY: rotY + inward * 1.05,
+          closedPos: pivot.position.clone(), openPos: pivot.position.clone(),
+        });
+      }
     } else if (win.style === "sliding") {
+      // Twin offset panes on visible tracks; one pane slides.
+      box(group, frameMat, cx, cy, cz, w + 0.08, h + 0.08, t * 0.6, rotY, tagInfo);
       const mount = new THREE.Group();
       mount.position.set(cx, cy, cz);
       mount.rotation.y = rotY;
       group.add(mount);
+      leaf(mount, frameMat, 0, h / 2 + 0.01, 0, w + 0.04, 0.05, 0.1);
+      leaf(mount, frameMat, 0, -h / 2 - 0.01, 0, w + 0.04, 0.05, 0.1);
       const halfW = w / 2 - 0.02;
-      leaf(mount, matGlass, -w / 4, 0, -0.015, halfW, h, 0.03);
-      const slider = leaf(mount, matGlass, w / 4, 0, 0.015, halfW, h, 0.03);
-      leaf(mount, frameMat, 0, 0, 0, 0.05, h, 0.05);
+      leaf(mount, matGlass, -w / 4, 0, -0.02, halfW, h - 0.04, 0.03);
+      const slider = leaf(mount, matGlass, w / 4, 0, 0.02, halfW, h - 0.04, 0.03);
+      leaf(mount, frameMat, w / 4 - halfW / 2 + 0.03, 0, 0.02, 0.05, h - 0.1, 0.05);
       const closedPos = slider.position.clone();
       const openPos = closedPos.clone();
       openPos.x -= w * 0.42;
-      pivots.push({
+      register({
         kind: "window", id: win.id, node: slider, mode: "slide",
-        closedRotY: 0, openRotY: 0, closedPos, openPos, current: startAt, target: startAt,
+        closedRotY: 0, openRotY: 0, closedPos, openPos,
       });
-      if (startAt === 1) slider.position.copy(openPos);
     } else if (win.style === "single-hung" || win.style === "double-hung") {
-      const sash = new THREE.Group();
-      sash.position.set(cx, cy, cz);
-      sash.rotation.y = rotY;
-      group.add(sash);
-      leaf(sash, matGlass, 0, 0, 0, w, h, 0.04);
-      leaf(sash, frameMat, 0, 0, 0, w, 0.05, 0.05);
-      const closedPos = sash.position.clone();
-      const openPos = closedPos.clone();
-      openPos.y += h * 0.42;
-      pivots.push({
-        kind: "window", id: win.id, node: sash, mode: "slide",
-        closedRotY: 0, openRotY: 0, closedPos, openPos, current: startAt, target: startAt,
-      });
-      if (startAt === 1) sash.position.copy(openPos);
-    } else {
-      // fixed / bay / skylight: static glass, not openable.
-      box(group, matGlass, cx, cy, cz, w, h, 0.04, rotY, tagInfo);
-      if (win.style === "bay") {
-        box(group, frameMat, cx, cy, cz, 0.05, h, 0.05, rotY, tagInfo);
-        box(group, frameMat, cx, cy, cz, w, 0.05, 0.05, rotY, tagInfo);
+      // Split sashes with a chunky meeting rail; bottom sash (both, if double) slides.
+      box(group, frameMat, cx, cy, cz, w + 0.08, h + 0.08, t * 0.6, rotY, tagInfo);
+      const mount = new THREE.Group();
+      mount.position.set(cx, cy, cz);
+      mount.rotation.y = rotY;
+      group.add(mount);
+      if (win.style !== "double-hung") {
+        leaf(mount, matGlass, 0, h / 4, -0.012, w - 0.02, h / 2 - 0.01, 0.03);
       }
+      const lower = new THREE.Group();
+      lower.position.set(0, -h / 4, 0.012);
+      mount.add(lower);
+      leaf(lower, matGlass, 0, 0, 0, w - 0.02, h / 2 - 0.01, 0.03);
+      leaf(lower, frameMat, 0, h / 4 - 0.02, 0, w - 0.02, 0.07, 0.05);
+      leaf(lower, frameMat, 0, -0.02, 0.02, 0.16, 0.05, 0.04);
+      const closedPos = lower.position.clone();
+      const openPos = closedPos.clone();
+      openPos.y += h * 0.4;
+      register({
+        kind: "window", id: win.id, node: lower, mode: "slide",
+        closedRotY: 0, openRotY: 0, closedPos, openPos,
+      });
+      if (win.style === "double-hung") {
+        const upper = new THREE.Group();
+        upper.position.set(0, h / 4, -0.012);
+        mount.add(upper);
+        const closed2 = upper.position.clone();
+        const open2 = closed2.clone();
+        open2.y -= h * 0.3;
+        leaf(upper, matGlass, 0, 0, 0, w - 0.02, h / 2 - 0.01, 0.03);
+        register({
+          kind: "window", id: win.id, node: upper, mode: "slide",
+          closedRotY: 0, openRotY: 0, closedPos: closed2, openPos: open2,
+        });
+      }
+    } else if (win.style === "bay") {
+      // Projecting 3-sided bay with cap and sill (static showpiece).
+      const out = 0.45 * bayDir;
+      const mount = new THREE.Group();
+      mount.position.set(cx, cy, cz);
+      mount.rotation.y = rotY;
+      group.add(mount);
+      leaf(mount, matGlass, 0, 0, out, w * 0.5, h, 0.04);
+      leaf(mount, matGlass, -w * 0.36, 0, out * 0.55, w * 0.34, h, 0.04, 0.6);
+      leaf(mount, matGlass, w * 0.36, 0, out * 0.55, w * 0.34, h, 0.04, -0.6);
+      leaf(mount, frameMat, -w * 0.25, 0, out, 0.07, h + 0.04, 0.07);
+      leaf(mount, frameMat, w * 0.25, 0, out, 0.07, h + 0.04, 0.07);
+      leaf(mount, frameMat, 0, h / 2 + 0.06, out * 0.5, w + 0.16, 0.09, 0.62);
+      leaf(mount, frameMat, 0, -h / 2 - 0.03, out * 0.5, w + 0.16, 0.08, 0.62);
+    } else {
+      // Skylight-style: bold frame with cross bars.
+      box(group, frameMat, cx, cy, cz, w + 0.14, h + 0.14, t * 0.55, rotY, tagInfo);
+      box(group, matGlass, cx, cy, cz, w, h, 0.04, rotY, tagInfo);
+      box(group, frameMat, cx, cy, cz, 0.06, h, 0.05, rotY, tagInfo);
+      box(group, frameMat, cx, cy, cz, w, 0.06, 0.05, rotY, tagInfo);
     }
   }
 }

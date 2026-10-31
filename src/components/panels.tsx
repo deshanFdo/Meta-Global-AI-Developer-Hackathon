@@ -5,6 +5,7 @@ import type { AnalysisSource, EditTool, GeneratedTextures, HouseAnalysis, SamMat
 import { estimateCost, type CostTier } from "@/lib/cost";
 import { SAM_CONCEPTS } from "@/lib/sam";
 import { deleteProject, listProjects, loadProject, saveProject } from "@/lib/project-store";
+import { FURNITURE_CATALOG, type CatalogEntry } from "@/lib/furnish";
 import type { CameraPreset, LightingMode } from "./Viewer3D";
 
 // ---------------------------------------------------------------------------
@@ -13,10 +14,11 @@ import type { CameraPreset, LightingMode } from "./Viewer3D";
 
 const TOOLS: Array<{ id: EditTool; label: string; hint: string }> = [
   { id: "select", label: "Select", hint: "Orbit, open doors and windows by clicking them." },
-  { id: "move", label: "Move wall", hint: "Drag any wall; its doors and windows ride along." },
+  { id: "move", label: "Move", hint: "Drag walls (openings ride along) or furniture." },
   { id: "add-wall", label: "Add wall", hint: "Click two floor points. Snaps to 0.25 m and 15° angles." },
   { id: "add-door", label: "Add door", hint: "Click a wall where the door should go." },
   { id: "add-window", label: "Add window", hint: "Click a wall where the window should go." },
+  { id: "add-furniture", label: "Add decor", hint: "Pick a piece below, then click the floor. R rotates." },
   { id: "measure", label: "Measure", hint: "Click two points for the distance. Right-click clears." },
 ];
 
@@ -29,6 +31,8 @@ export function BuildTab({
   onUndo,
   onRedo,
   onDelete,
+  pendingFurniture,
+  onPickFurniture,
 }: {
   analysis: HouseAnalysis;
   tool: EditTool;
@@ -37,9 +41,12 @@ export function BuildTab({
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
-  onDelete: (kind: "wall" | "door" | "window", id: string) => void;
+  onDelete: (kind: "wall" | "door" | "window" | "furniture", id: string) => void;
+  pendingFurniture: CatalogEntry | null;
+  onPickFurniture: (entry: CatalogEntry | null) => void;
 }): React.JSX.Element {
   const active = TOOLS.find((t) => t.id === tool);
+  const categories = Array.from(new Set(FURNITURE_CATALOG.map((c) => c.category)));
   return (
     <div className="space-y-3 text-sm">
       <div className="flex gap-2">
@@ -65,6 +72,38 @@ export function BuildTab({
           ))}
         </div>
         <p className="mt-1 text-[11px] text-[var(--muted)]">{active?.hint}</p>
+        {tool === "add-furniture" && (
+          <div className="mt-2 space-y-2">
+            {pendingFurniture && (
+              <div className="flex items-center justify-between rounded-lg border border-[var(--accent)] bg-blue-500/10 px-2.5 py-1.5 text-xs">
+                <span>Placing: {pendingFurniture.label}</span>
+                <button type="button" onClick={() => onPickFurniture(null)} className="btn-ghost px-2 py-0.5 text-[11px]">
+                  Done
+                </button>
+              </div>
+            )}
+            {categories.map((cat) => (
+              <details key={cat} className="rounded-lg border border-[var(--border)]" open={cat === "Living"}>
+                <summary className="cursor-pointer px-2.5 py-1.5 text-xs">{cat}</summary>
+                <div className="grid grid-cols-2 gap-1.5 px-2.5 pb-2">
+                  {FURNITURE_CATALOG.filter((c) => c.category === cat).map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => onPickFurniture(c)}
+                      className={`btn-ghost px-2 py-1.5 text-left text-[11px] ${pendingFurniture?.id === c.id ? "tab-active" : ""}`}
+                    >
+                      <span className="block font-medium">{c.label}</span>
+                      <span className="block text-[10px] text-[var(--muted)]">
+                        {c.w.toFixed(1)}×{c.d.toFixed(1)} m
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
       </div>
       <div>
         <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Elements</h3>
@@ -114,6 +153,24 @@ export function BuildTab({
               ))}
             </div>
           </details>
+          <details className="rounded-lg border border-[var(--border)]">
+            <summary className="cursor-pointer px-2.5 py-2">Furniture ({(analysis.furniture ?? []).length})</summary>
+            <div className="max-h-40 space-y-1 overflow-y-auto px-2.5 pb-2">
+              {(analysis.furniture ?? []).map((f) => (
+                <div key={f.id} className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[var(--muted)]">
+                    {f.type.replace(/_/g, " ")} · {f.width.toFixed(1)}×{f.depth.toFixed(1)} m
+                  </span>
+                  <button type="button" onClick={() => onDelete("furniture", f.id)} className="btn-ghost px-2 py-0.5 text-[11px] text-red-300" aria-label={`Delete ${f.id}`}>
+                    Delete
+                  </button>
+                </div>
+              ))}
+              {(analysis.furniture ?? []).length === 0 && (
+                <p className="text-[11px] text-[var(--muted)]">None yet — use Add decor above.</p>
+              )}
+            </div>
+          </details>
         </div>
       </div>
     </div>
@@ -146,7 +203,9 @@ export function PlanTab({
             ? "live Muse inference"
             : source === "file"
               ? "project file / save"
-              : "prebuilt sample (no inference)"}
+              : source === "blank"
+                ? "blank canvas"
+                : "prebuilt sample (no inference)"}
         </span>
         <span className="rounded-full border border-[var(--border)] px-2.5 py-1">Model: {model}</span>
         <span className="rounded-full border border-[var(--border)] px-2.5 py-1">

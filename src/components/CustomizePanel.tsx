@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import type { Door, HouseAnalysis, PlanWindow, Wall } from "@/types";
+import type { Door, FurnitureItem, HouseAnalysis, PlanWindow, Wall } from "@/types";
 import type { ElementTag } from "@/lib/geometry";
 import { isOpenable } from "@/lib/geometry";
+import { VARIANT_OPTIONS } from "@/lib/furnish";
 
 interface Props {
   analysis: HouseAnalysis;
@@ -12,8 +13,8 @@ interface Props {
   open?: boolean;
   onToggleOpen?: () => void;
   onPatch: (kind: ElementTag["kind"], id: string, patch: Record<string, unknown>) => void;
-  /** Delete a wall (cascades its doors/windows), door or window. */
-  onDelete: (kind: "wall" | "door" | "window", id: string) => void;
+  /** Delete a wall (cascades its doors/windows), door, window or furniture item. */
+  onDelete: (kind: "wall" | "door" | "window" | "furniture", id: string) => void;
   /** Set every wall (and the default ceiling height) to h meters. */
   onSetAllWallHeight: (h: number) => void;
   /** Shift a door/window along its wall by dir * 0.1 m. */
@@ -54,13 +55,15 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
     selection.kind === "window" ? analysis.windows.find((w) => w.id === selection.id) : undefined;
   const wall: Wall | undefined =
     selection.kind === "wall" ? analysis.walls.find((w) => w.id === selection.id) : undefined;
+  const furn: FurnitureItem | undefined =
+    selection.kind === "furniture" ? (analysis.furniture ?? []).find((f) => f.id === selection.id) : undefined;
   const roof = selection.kind === "roof" ? analysis.roof : undefined;
 
   const [recLoading, setRecLoading] = useState(false);
   const [recError, setRecError] = useState<string | null>(null);
   const [rec, setRec] = useState<{ patch: Record<string, string | number>; reason: string; model: string } | null>(null);
 
-  if (!door && !win && !wall && !roof) {
+  if (!door && !win && !wall && !furn && !roof) {
     return (
       <div className="text-xs text-[var(--muted)]">
         <p>This element is no longer in the model.</p>
@@ -78,7 +81,9 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
         ? `Window ${win.id} · ${win.width.toFixed(2)} × ${win.height.toFixed(2)} m`
         : wall !== undefined
           ? `Wall ${wall.id} · ${wall.isExterior ? "exterior" : "interior"}`
-          : `Roof · ${roof?.type} · ${roof?.pitch.toFixed(0)}° pitch`;
+          : roof !== undefined
+            ? `Roof · ${roof.type} · ${roof.pitch.toFixed(0)}° pitch`
+            : `Furniture ${furn?.id} · ${furn?.type.replace(/_/g, " ")}`;
 
   const runRecommend = async (): Promise<void> => {
     if (door === undefined && win === undefined) return;
@@ -305,6 +310,54 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
               onChange={(e) => onPatch("roof", "roof", { color: e.target.value })}
               className="h-8 w-full cursor-pointer rounded-md border border-[var(--border)] bg-black/30" />
           </Row>
+        </div>
+      )}
+
+      {furn !== undefined && (
+        <div className="space-y-2">
+          {(VARIANT_OPTIONS[furn.type] ?? []).length > 0 && (
+            <Row label="Variant">
+              <select
+                value={furn.variant ?? VARIANT_OPTIONS[furn.type]?.[0] ?? ""}
+                onChange={(e) => onPatch("furniture", furn.id, { variant: e.target.value })}
+                className={inputCls}
+              >
+                {(VARIANT_OPTIONS[furn.type] ?? []).map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </Row>
+          )}
+          <Row label={`Rotation (${furn.rotation}°)`}>
+            <input
+              type="range" min={0} max={359} step={15} value={((furn.rotation % 360) + 360) % 360}
+              onChange={(e) => onPatch("furniture", furn.id, { rotation: Number(e.target.value) })}
+              className="w-full" aria-label="Rotation degrees"
+            />
+          </Row>
+          <div className="grid grid-cols-3 gap-2">
+            <Row label="W (m)">
+              <input type="number" step="0.05" min={0.15} max={6} defaultValue={furn.width.toFixed(2)} key={`fw-${furn.width}`} className={inputCls}
+                onBlur={(e) => onPatch("furniture", furn.id, { width: num(e.target.value, furn.width, 0.15, 6) })} />
+            </Row>
+            <Row label="D (m)">
+              <input type="number" step="0.05" min={0.15} max={6} defaultValue={furn.depth.toFixed(2)} key={`fd-${furn.depth}`} className={inputCls}
+                onBlur={(e) => onPatch("furniture", furn.id, { depth: num(e.target.value, furn.depth, 0.15, 6) })} />
+            </Row>
+            <Row label="H (m)">
+              <input type="number" step="0.05" min={0.02} max={3} defaultValue={furn.height.toFixed(2)} key={`fh-${furn.height}`} className={inputCls}
+                onBlur={(e) => onPatch("furniture", furn.id, { height: num(e.target.value, furn.height, 0.02, 3) })} />
+            </Row>
+          </div>
+          <Row label="Color">
+            <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(furn.color ?? "") ? (furn.color as string) : "#5b7fa6"}
+              onChange={(e) => onPatch("furniture", furn.id, { color: e.target.value })}
+              className="h-8 w-full cursor-pointer rounded-md border border-[var(--border)] bg-black/30" />
+          </Row>
+          {furn.evidence && <p className="text-[11px] text-[var(--muted)]">Detected as: {furn.evidence}</p>}
+          <button type="button" onClick={() => { onDelete("furniture", furn.id); onClose(); }} className="btn-ghost w-full px-3 py-1.5 text-[11px] text-red-300">
+            Delete this item
+          </button>
         </div>
       )}
 

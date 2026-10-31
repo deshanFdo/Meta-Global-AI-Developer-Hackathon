@@ -18,7 +18,7 @@ interface WalkModeProps {
   open: OpenState;
   onToggleOpen: (kind: "door" | "window", id: string) => void;
   onPatch: (kind: ElementTag["kind"], id: string, patch: Record<string, unknown>) => void;
-  onDelete: (kind: "wall" | "door" | "window", id: string) => void;
+  onDelete: (kind: "wall" | "door" | "window" | "furniture", id: string) => void;
   onSetAllWallHeight: (h: number) => void;
   onNudge: (kind: "door" | "window", id: string, dir: 1 | -1) => void;
   onClose: () => void;

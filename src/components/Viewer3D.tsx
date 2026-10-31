@@ -6,6 +6,7 @@ import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import type { EditTool, GeneratedTextures, HouseAnalysis } from "@/types";
 import { buildHouseGroup, disposeGroup, findTag, type ElementTag, type OpenState } from "@/lib/geometry";
+import { buildFurniture, nominalSize, type CatalogEntry } from "@/lib/furnish";
 import InteractiveAnimator from "./InteractiveAnimator";
 
 export type LightingMode = "day" | "golden" | "night";
@@ -26,7 +27,11 @@ interface ViewerProps {
   onAddWall: (start: { x: number; y: number }, end: { x: number; y: number }) => void;
   onAddOpening: (kind: "door" | "window", wallId: string, at: { x: number; y: number }) => void;
   onMoveWall: (id: string, dx: number, dy: number) => void;
+  onMoveFurniture: (id: string, dx: number, dy: number) => void;
   onCheckpoint: () => void;
+  onAddFurniture: (entry: CatalogEntry, at: { x: number; y: number }, rotation: number) => void;
+  onCancelTool: () => void;
+  pendingFurniture: CatalogEntry | null;
   sunHour: number | null;
   showScaleFigure: boolean;
 }
@@ -204,7 +209,7 @@ const LIGHTS: Record<LightingMode, { bg: string; sun: string; intensity: number;
 };
 
 export default function Viewer3D(props: ViewerProps): React.JSX.Element {
-  const { analysis, textures, showRoof, showLabels, showDimensions, lighting, cameraPreset, open, onToggleOpen, autoRotate, editTool, onAddWall, onAddOpening, onMoveWall, onCheckpoint, sunHour, showScaleFigure } = props;
+  const { analysis, textures, showRoof, showLabels, showDimensions, lighting, cameraPreset, open, onToggleOpen, autoRotate, editTool, onAddWall, onAddOpening, onMoveWall, onMoveFurniture, onCheckpoint, onAddFurniture, onCancelTool, pendingFurniture, sunHour, showScaleFigure } = props;
   const { overallWidth: w, overallDepth: d, wallHeight: h } = analysis.metadata;
   const light = LIGHTS[lighting];
 
@@ -297,25 +302,38 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
   const [hoverPlan, setHoverPlan] = useState<{ x: number; y: number } | null>(null);
   const hoverRef = useRef<{ x: number; y: number } | null>(null);
   const [measurePts, setMeasurePts] = useState<Array<{ x: number; z: number }>>([]);
-  const dragRef = useRef<{ id: string; bx: number; bz: number; ldx: number; ldy: number } | null>(null);
+  const [pendingRot, setPendingRot] = useState(0);
+  const dragRef = useRef<{ kind: "wall" | "furniture"; id: string; bx: number; bz: number; ldx: number; ldy: number } | null>(null);
+  const editToolRef = useRef(editTool);
+  editToolRef.current = editTool;
+  const onCancelToolRef = useRef(onCancelTool);
+  onCancelToolRef.current = onCancelTool;
 
   // Reset transient tool state when the tool or model changes.
   useEffect(() => {
     setPendingStart(null);
     setHoverPlan(null);
     setMeasurePts([]);
+    setPendingRot(0);
     dragRef.current = null;
-  }, [editTool, analysis]);
+  }, [editTool, analysis, pendingFurniture?.id]);
 
   useEffect(() => {
     const onUp = (): void => {
       dragRef.current = null;
     };
     const onKey = (e: KeyboardEvent): void => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "SELECT" || target.tagName === "TEXTAREA")) return;
       if (e.code === "Escape") {
-        setPendingStart(null);
-        setMeasurePts([]);
-        dragRef.current = null;
+        if (editToolRef.current === "add-furniture") onCancelToolRef.current();
+        else {
+          setPendingStart(null);
+          setMeasurePts([]);
+          dragRef.current = null;
+        }
+      } else if (e.code === "KeyR" && editToolRef.current === "add-furniture") {
+        setPendingRot((r) => (r + 45) % 360);
       }
     };
     window.addEventListener("pointerup", onUp);
@@ -325,6 +343,33 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
       window.removeEventListener("keydown", onKey);
     };
   }, []);
+
+  // Ghost preview for furniture placement.
+  const ghost = useMemo(() => {
+    if (!pendingFurniture) return null;
+    const g = buildFurniture(pendingFurniture.type, pendingFurniture.variant, pendingFurniture.color);
+    const nom = nominalSize(pendingFurniture.type, pendingFurniture.variant);
+    g.scale.set(pendingFurniture.w / nom.w, pendingFurniture.h / nom.h, pendingFurniture.d / nom.d);
+    g.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        const std = m as THREE.MeshStandardMaterial;
+        std.transparent = true;
+        std.opacity = 0.62;
+        if (std.emissive) {
+          std.emissive.setHex(0x4f7cff);
+          std.emissiveIntensity = 0.25;
+        }
+      }
+    });
+    return g;
+  }, [pendingFurniture]);
+
+  useEffect(() => () => {
+    if (ghost) disposeGroup(ghost);
+  }, [ghost]);
 
   /** Wall endpoint with 15° angle snapping for straight, clean walls. */
   const snapWallEnd = useCallback((a: { x: number; y: number }, b: { x: number; y: number }): { x: number; y: number } => {
@@ -337,7 +382,7 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
     return { x: snapQ(a.x + Math.cos(ang) * len), y: snapQ(a.y + Math.sin(ang) * len) };
   }, []);
 
-  const floorTool = editTool === "add-wall" || editTool === "move" || editTool === "measure";
+  const floorTool = editTool === "add-wall" || editTool === "move" || editTool === "measure" || editTool === "add-furniture";
 
   const rubberEnd = pendingStart && hoverPlan ? snapWallEnd(pendingStart, hoverPlan) : null;
 
@@ -413,11 +458,11 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
         onPointerDown={(e: ThreeEvent<PointerEvent>) => {
           if (editTool !== "move" || e.button !== 0) return;
           const tag: ElementTag | null = findTag(e.object);
-          if (tag?.kind !== "wall") return;
+          if (tag?.kind !== "wall" && tag?.kind !== "furniture") return;
           e.stopPropagation();
           (e.target as unknown as Element).setPointerCapture?.(e.pointerId);
           onCheckpoint();
-          dragRef.current = { id: tag.id, bx: e.point.x, bz: e.point.z, ldx: 0, ldy: 0 };
+          dragRef.current = { kind: tag.kind, id: tag.id, bx: e.point.x, bz: e.point.z, ldx: 0, ldy: 0 };
         }}
       />
       {/* Invisible floor click-plane for add / move / measure tools. */}
@@ -436,6 +481,8 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
                 onAddWall(pendingStart, snapWallEnd(pendingStart, snapped));
                 setPendingStart(null);
               }
+            } else if (editTool === "add-furniture") {
+              if (pendingFurniture) onAddFurniture(pendingFurniture, snapped, pendingRot);
             } else if (editTool === "measure") {
               const wpt = { x: e.point.x, z: e.point.z };
               setMeasurePts((prev) => (prev.length >= 2 ? [wpt] : [...prev, wpt]));
@@ -450,16 +497,21 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
             if (drag && editTool === "move") {
               const dx = e.point.x - drag.bx;
               const dz = e.point.z - drag.bz;
-              onMoveWall(drag.id, dx - drag.ldx, dz - drag.ldy);
+              if (drag.kind === "wall") onMoveWall(drag.id, dx - drag.ldx, dz - drag.ldy);
+              else onMoveFurniture(drag.id, dx - drag.ldx, dz - drag.ldy);
               drag.ldx = dx;
               drag.ldy = dz;
             }
           }}
           onContextMenu={(e) => {
             e.nativeEvent.preventDefault();
-            setPendingStart(null);
-            setMeasurePts([]);
-            dragRef.current = null;
+            if (e.delta > 6) return; // was a right-drag pan, not a click
+            if (editTool === "add-furniture") onCancelTool();
+            else {
+              setPendingStart(null);
+              setMeasurePts([]);
+              dragRef.current = null;
+            }
           }}
         >
           <planeGeometry args={[140, 140]} />
@@ -512,6 +564,24 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
               </Html>
             </>
           )}
+        </>
+      )}
+      {/* Furniture ghost preview while placing. */}
+      {editTool === "add-furniture" && ghost && hoverPlan && (
+        <>
+          <primitive
+            object={ghost}
+            position={[hoverPlan.x - w / 2, 0, hoverPlan.y - d / 2]}
+            rotation={[0, (pendingRot * Math.PI) / 180, 0]}
+          />
+          <Html
+            position={[hoverPlan.x - w / 2, 1.6, hoverPlan.y - d / 2]}
+            center
+            distanceFactor={22}
+            style={{ pointerEvents: "none" }}
+          >
+            <div style={dimStyle}>{pendingFurniture?.label} · R rotates</div>
+          </Html>
         </>
       )}
       {/* 1.8 m scale figure for size reference. */}
@@ -586,9 +656,10 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
     </Canvas>
       <div className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-black/55 px-2.5 py-1 text-[11px] text-white/75">
         {editTool === "select" && "Click a door or window to open it · drag to orbit · scroll to zoom"}
-        {editTool === "move" && "Drag a wall to move it (openings ride along) · right-click cancels"}
+        {editTool === "move" && "Drag a wall or furniture to move it · right-click cancels"}
         {editTool === "add-wall" && (pendingStart ? "Click the end point · right-click cancels" : "Click the floor to start a wall")}
         {(editTool === "add-door" || editTool === "add-window") && "Click a wall where the opening should go"}
+        {editTool === "add-furniture" && (pendingFurniture ? `Placing ${pendingFurniture.label} · R rotates · right-click done` : "Pick a piece below first")}
         {editTool === "measure" && (measurePts.length === 1 ? "Click the second point" : "Click two points to measure")}
       </div>
     </div>

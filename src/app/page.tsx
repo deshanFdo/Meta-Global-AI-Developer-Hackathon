@@ -8,6 +8,7 @@ import { buildHouseGroup, disposeGroup, isOpenable, openKey, type OpenState } fr
 import { doorSound } from "@/lib/sound";
 import { downloadText, exportGroupToGLB, houseToCSV, houseToDXF } from "@/lib/exporters";
 import { clearAutosave, loadAutosave, saveAutosave } from "@/lib/project-store";
+import { VARIANT_OPTIONS, type CatalogEntry } from "@/lib/furnish";
 import UploadCard, { type ArchetypeKind } from "@/components/UploadCard";
 import PlanCompare from "@/components/PlanCompare";
 import { AskTab, BuildTab, ExportTab, LookTab, PlanTab, VerifyTab, type QaMessage, type SparkCounts } from "@/components/panels";
@@ -93,6 +94,36 @@ function uid(prefix: string): string {
   return `${prefix}-u${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 }
 
+const FURNITURE_TYPES = [
+  "bed_double", "bed_single", "bed_king", "sofa", "armchair", "dining_table", "chair", "office_chair",
+  "kitchen_counter", "toilet", "bathtub", "sink", "sink_vanity", "shower", "desk", "wardrobe", "bookshelf",
+  "coffee_table", "nightstand", "plant", "tv_unit", "floor_lamp", "rug", "furnace", "washing_machine", "column",
+];
+
+function blankAnalysis(): HouseAnalysis {
+  return {
+    id: `blank-${Date.now()}`,
+    metadata: {
+      style: "Blank project",
+      floors: 1,
+      totalArea: 0,
+      overallWidth: 20,
+      overallDepth: 15,
+      wallHeight: 2.7,
+      scale: 50,
+    },
+    walls: [],
+    doors: [],
+    windows: [],
+    rooms: [],
+    roof: { type: "flat", pitch: 0, overhang: 0.3, material: "metal", color: "#4a4a4a" },
+    furniture: [],
+    staircases: [],
+    confidence: 1,
+    notes: ["Blank canvas — draw walls in the Build tab to design from scratch."],
+  };
+}
+
 function FlowStep({ done, n, label }: { done: boolean; n: number; label: string }): React.JSX.Element {
   return (
     <li className="flex items-center gap-2">
@@ -146,6 +177,7 @@ export default function Home(): React.JSX.Element {
   const [showScaleFigure, setShowScaleFigure] = useState(false);
   const [walkVisited, setWalkVisited] = useState(false);
   const [restoredNote, setRestoredNote] = useState<string | null>(null);
+  const [pendingFurniture, setPendingFurniture] = useState<CatalogEntry | null>(null);
 
   // Undo/redo across every model mutation (refs + tick to stay StrictMode-safe).
   const analysisRef = useRef<HouseAnalysis | null>(null);
@@ -520,12 +552,39 @@ export default function Home(): React.JSX.Element {
           },
         };
       }
+      if (kind === "furniture") {
+        return {
+          ...prev,
+          furniture: (prev.furniture ?? []).map((f) => {
+            if (f.id !== id) return f;
+            const options = VARIANT_OPTIONS[f.type] ?? [];
+            const variant =
+              typeof patch.variant === "string" && options.includes(patch.variant) ? patch.variant : f.variant;
+            const rotation =
+              typeof patch.rotation === "number" && Number.isFinite(patch.rotation)
+                ? ((Math.round(patch.rotation) % 360) + 360) % 360
+                : f.rotation;
+            return {
+              ...f,
+              ...(variant !== undefined ? { variant } : {}),
+              ...(isHex(patch.color) ? { color: patch.color } : {}),
+              rotation,
+              width: clampNum(patch.width, f.width, 0.15, 6),
+              depth: clampNum(patch.depth, f.depth, 0.15, 6),
+              height: clampNum(patch.height, f.height, 0.02, 3),
+            };
+          }),
+        };
+      }
       return prev;
     });
   }, [commit]);
 
-  const handleDeleteElement = useCallback((kind: "wall" | "door" | "window", id: string) => {
+  const handleDeleteElement = useCallback((kind: "wall" | "door" | "window" | "furniture", id: string) => {
     commit((prev) => {
+      if (kind === "furniture") {
+        return { ...prev, furniture: (prev.furniture ?? []).filter((f) => f.id !== id) };
+      }
       if (kind === "door") {
         setOpenMap((m) => {
           if (!m[`door:${id}`]) return m;
@@ -635,6 +694,50 @@ export default function Home(): React.JSX.Element {
     [commit]
   );
 
+  /** Drag-move furniture (transient; caller checkpoints at drag start). */
+  const handleMoveFurniture = useCallback((id: string, dx: number, dy: number) => {
+    const current = analysisRef.current;
+    if (!current || (dx === 0 && dy === 0)) return;
+    setAnalysis({
+      ...current,
+      furniture: (current.furniture ?? []).map((f) =>
+        f.id === id ? { ...f, position: { x: f.position.x + dx, y: f.position.y + dy } } : f
+      ),
+    });
+    setEdited(true);
+  }, []);
+
+  const handleAddFurniture = useCallback((entry: CatalogEntry, at: { x: number; y: number }, rotation: number) => {
+    if (!FURNITURE_TYPES.includes(entry.type)) return;
+    commit((prev) => ({
+      ...prev,
+      furniture: [
+        ...(prev.furniture ?? []),
+        {
+          id: uid("furn"),
+          type: entry.type,
+          variant: entry.variant,
+          position: { x: Math.round(at.x * 100) / 100, y: Math.round(at.y * 100) / 100 },
+          rotation: ((Math.round(rotation) % 360) + 360) % 360,
+          width: entry.w,
+          depth: entry.d,
+          height: entry.h,
+          color: entry.color,
+        },
+      ],
+    }));
+  }, [commit]);
+
+  const handleBlankProject = useCallback(() => {
+    resetForNewAnalysis();
+    setAnalysis(blankAnalysis());
+    setSource("blank");
+    setModel("blank canvas");
+    setDisplayImage(null);
+    setTab("build");
+    setEditTool("add-wall");
+  }, [resetForNewAnalysis]);
+
   /** Drag-move a wall (openings ride along). Caller checkpoints history at drag start. */
   const handleMoveWall = useCallback((id: string, dx: number, dy: number) => {
     const current = analysisRef.current;
@@ -741,7 +844,7 @@ export default function Home(): React.JSX.Element {
           </span>
           {analysis && (
             <span className="rounded-full border border-[var(--border)] px-3 py-1">
-              Model: {source === "live" ? <span className="text-[var(--success)]">live</span> : source === "file" ? <span className="text-[var(--success)]">project file</span> : <span className="text-[var(--warning)]">sample</span>} · {model}
+              Model: {source === "live" ? <span className="text-[var(--success)]">live</span> : source === "file" ? <span className="text-[var(--success)]">project file</span> : source === "blank" ? <span>blank canvas</span> : <span className="text-[var(--warning)]">sample</span>} · {model}
               {edited && <span className="text-[var(--muted)]"> · edited in 3D</span>}
             </span>
           )}
@@ -755,7 +858,7 @@ export default function Home(): React.JSX.Element {
 
       <div className="grid flex-1 gap-4 p-4 lg:grid-cols-[400px_minmax(0,1fr)]">
         <aside className="space-y-4">
-          <UploadCard onFile={handleFile} onSample={handleSample} busy={busy !== null} deep={deep} setDeep={setDeep} />
+          <UploadCard onFile={handleFile} onSample={handleSample} onBlank={handleBlankProject} busy={busy !== null} deep={deep} setDeep={setDeep} />
           {restoredNote && (
             <div className="panel border-l-4 border-l-[var(--accent)] p-3 text-xs">
               <p className="text-[var(--muted)]">{restoredNote}</p>
@@ -819,6 +922,11 @@ export default function Home(): React.JSX.Element {
                   onUndo={undo}
                   onRedo={redo}
                   onDelete={handleDeleteElement}
+                  pendingFurniture={pendingFurniture}
+                  onPickFurniture={(entry) => {
+                    setPendingFurniture(entry);
+                    if (entry) setEditTool("add-furniture");
+                  }}
                 />
               )}
               {tab === "ask" && <AskTab messages={qa} busy={qaBusy} onAsk={handleAsk} />}
@@ -899,7 +1007,14 @@ export default function Home(): React.JSX.Element {
                 onAddWall={handleAddWall}
                 onAddOpening={handleAddOpening}
                 onMoveWall={handleMoveWall}
+                onMoveFurniture={handleMoveFurniture}
                 onCheckpoint={checkpoint}
+                onAddFurniture={handleAddFurniture}
+                onCancelTool={() => {
+                  setEditTool("select");
+                  setPendingFurniture(null);
+                }}
+                pendingFurniture={pendingFurniture}
                 sunHour={sunHour}
                 showScaleFigure={showScaleFigure}
               />
