@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import * as THREE from "three";
 import type { AnalysisSource, GeneratedTextures, HouseAnalysis, SamMatch } from "@/types";
 import { buildHouseGroup, disposeGroup, isOpenable, openKey, type OpenState } from "@/lib/geometry";
+import { doorSound } from "@/lib/sound";
 import { downloadText, exportGroupToGLB, houseToCSV, houseToDXF } from "@/lib/exporters";
 import UploadCard, { type ArchetypeKind } from "@/components/UploadCard";
 import PlanCompare from "@/components/PlanCompare";
@@ -120,6 +121,7 @@ export default function Home(): React.JSX.Element {
   const [arOpen, setArOpen] = useState(false);
   const [vrOpen, setVrOpen] = useState(false);
   const [openMap, setOpenMap] = useState<OpenState>({});
+  const [autoRotate, setAutoRotate] = useState(false);
 
   useEffect(() => {
     fetch("/api/health")
@@ -468,8 +470,10 @@ export default function Home(): React.JSX.Element {
         : analysis.windows.find((w) => w.id === id)?.style;
     if (!style || !isOpenable(kind, style)) return;
     const key = openKey(kind, id);
+    const willOpen = openMap[key] !== true;
     setOpenMap((prev) => ({ ...prev, [key]: !prev[key] }));
-  }, [analysis]);
+    doorSound(willOpen);
+  }, [analysis, openMap]);
   const handleExportCSV = useCallback(() => {
     if (!analysis) return;
     downloadText(houseToCSV(analysis), `${slug(analysis.metadata.style)}-schedules.csv`, "text/csv");
@@ -547,6 +551,8 @@ export default function Home(): React.JSX.Element {
                   setLighting={setLighting}
                   cameraPreset={cameraPreset}
                   setCameraPreset={setCameraPreset}
+                  autoRotate={autoRotate}
+                  setAutoRotate={setAutoRotate}
                   showRoof={showRoof}
                   setShowRoof={setShowRoof}
                   showFurniture={showFurniture}
@@ -599,6 +605,7 @@ export default function Home(): React.JSX.Element {
                 cameraPreset={cameraPreset}
                 open={openMap}
                 onToggleOpen={handleToggleOpen}
+                autoRotate={autoRotate}
               />
             ) : (
               <div className="flex h-full items-center justify-center p-8 text-center">

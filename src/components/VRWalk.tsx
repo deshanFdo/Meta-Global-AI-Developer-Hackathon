@@ -229,7 +229,7 @@ function VRScene({ analysis, textures, showFurniture, open, onToggleOpen, onPatc
         forward.normalize();
         const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0));
         const step = new THREE.Vector3().addScaledVector(forward, -az * 2.4 * dt).addScaledVector(right, ax * 2.4 * dt);
-        const solved = resolveCollision(live.current.analysis, rig.position.x + step.x, rig.position.z + step.z, 0.3);
+        const solved = resolveCollision(live.current.analysis, rig.position.x + step.x, rig.position.z + step.z, 0.3, live.current.open);
         rig.position.x = solved.x;
         rig.position.z = solved.z;
       } else if (source.handedness === "right") {

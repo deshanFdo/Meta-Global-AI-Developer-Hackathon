@@ -1,8 +1,9 @@
 import type { HouseAnalysis } from "@/types";
+import type { OpenState } from "./geometry";
 
 // ---------------------------------------------------------------------------
 // 2D circle-vs-segment collision in world coords (plan centered on origin).
-// Door gaps have no wall segments, so they stay walkable.
+// Open doorways stay walkable; closed doors block. Window walls always block.
 // ---------------------------------------------------------------------------
 
 function closestOnSegment(
@@ -27,7 +28,8 @@ export function resolveCollision(
   analysis: HouseAnalysis,
   x: number,
   z: number,
-  radius: number
+  radius: number,
+  open?: OpenState
 ): { x: number; z: number } {
   const { overallWidth: w, overallDepth: d } = analysis.metadata;
   const toX = (px: number): number => px - w / 2;
@@ -35,35 +37,64 @@ export function resolveCollision(
   let px = x;
   let pz = z;
 
+  const pushOut = (ax: number, az: number, bx: number, bz: number, halfThick: number): void => {
+    const closest = closestOnSegment(px, pz, ax, az, bx, bz);
+    const minDist = radius + halfThick;
+    if (closest.dist >= minDist) return;
+    const push = minDist - closest.dist;
+    let nx = px - closest.x;
+    let nz = pz - closest.z;
+    const nlen = Math.hypot(nx, nz);
+    if (nlen < 1e-6) {
+      const dx = bx - ax;
+      const dz = bz - az;
+      const dl = Math.hypot(dx, dz) || 1;
+      nx = -dz / dl;
+      nz = dx / dl;
+    } else {
+      nx /= nlen;
+      nz /= nlen;
+    }
+    px += nx * push;
+    pz += nz * push;
+  };
+
   for (let pass = 0; pass < 2; pass += 1) {
     for (const wall of analysis.walls) {
-      const closest = closestOnSegment(
-        px,
-        pz,
-        toX(wall.start.x),
-        toZ(wall.start.y),
-        toX(wall.end.x),
-        toZ(wall.end.y)
-      );
-      const minDist = radius + wall.thickness / 2;
-      if (closest.dist < minDist) {
-        const push = minDist - closest.dist;
-        let nx = px - closest.x;
-        let nz = pz - closest.z;
-        const nlen = Math.hypot(nx, nz);
-        if (nlen < 1e-6) {
-          // Center exactly on the wall: push along the wall normal.
-          const dx = toX(wall.end.x) - toX(wall.start.x);
-          const dz = toZ(wall.end.y) - toZ(wall.start.y);
-          const dl = Math.hypot(dx, dz) || 1;
-          nx = -dz / dl;
-          nz = dx / dl;
-        } else {
-          nx /= nlen;
-          nz /= nlen;
+      const ax = toX(wall.start.x);
+      const az = toZ(wall.start.y);
+      const bx = toX(wall.end.x);
+      const bz = toZ(wall.end.y);
+      const len = Math.hypot(bx - ax, bz - az);
+      if (len < 1e-6) continue;
+      const ux = (bx - ax) / len;
+      const uz = (bz - az) / len;
+      // Subtract spans of OPEN doors; closed doors (and all windows) block.
+      let free: Array<[number, number]> = [[0, len]];
+      // Build the open-door gaps to subtract.
+      const gaps: Array<[number, number]> = [];
+      for (const door of analysis.doors) {
+        if (door.wallId !== wall.id) continue;
+        if (!(open && open[`door:${door.id}`])) continue;
+        const t = (toX(door.position.x) - ax) * ux + (toZ(door.position.y) - az) * uz;
+        const half = door.width / 2;
+        gaps.push([Math.max(0, t - half), Math.min(len, t + half)]);
+      }
+      gaps.sort((p, q) => p[0] - q[0]);
+      for (const [a, b] of gaps) {
+        const next: Array<[number, number]> = [];
+        for (const [s0, s1] of free) {
+          if (b <= s0 || a >= s1) {
+            next.push([s0, s1]);
+            continue;
+          }
+          if (a > s0) next.push([s0, a]);
+          if (b < s1) next.push([b, s1]);
         }
-        px += nx * push;
-        pz += nz * push;
+        free = next;
+      }
+      for (const [s0, s1] of free) {
+        pushOut(ax + ux * s0, az + uz * s0, ax + ux * s1, az + uz * s1, wall.thickness / 2);
       }
     }
     for (const item of analysis.furniture ?? []) {

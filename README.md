@@ -54,4 +54,4 @@ API spend.
 ## Walk controls
 
 WASD/arrows walk · Space jump · Shift run · mouse look · E open/close targeted door or window ·
-click customize targeted element · F fullscreen · Q back to orbit · Esc pauses (click to resume).
+click customize targeted element · F fullscreen · M mute · Q back to orbit · Esc pauses (click to resume).

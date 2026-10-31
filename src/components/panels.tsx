@@ -212,6 +212,8 @@ export function LookTab(props: {
   setLighting: (v: LightingMode) => void;
   cameraPreset: CameraPreset;
   setCameraPreset: (v: CameraPreset) => void;
+  autoRotate: boolean;
+  setAutoRotate: (v: boolean) => void;
   showRoof: boolean;
   setShowRoof: (v: boolean) => void;
   showFurniture: boolean;
@@ -230,6 +232,8 @@ export function LookTab(props: {
     setLighting,
     cameraPreset,
     setCameraPreset,
+    autoRotate,
+    setAutoRotate,
     showRoof,
     setShowRoof,
     showFurniture,
@@ -306,6 +310,10 @@ export function LookTab(props: {
             </button>
           ))}
         </div>
+        <label className="mt-1.5 flex cursor-pointer items-center justify-between rounded-lg border border-[var(--border)] px-2.5 py-2 text-xs">
+          Cinematic auto-orbit
+          <input type="checkbox" checked={autoRotate} onChange={(e) => setAutoRotate(e.target.checked)} />
+        </label>
       </div>
       <div>
         <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Layers</h3>

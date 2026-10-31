@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { PointerLockControls } from "@react-three/drei";
 import * as THREE from "three";
@@ -8,6 +8,7 @@ import type { GeneratedTextures, HouseAnalysis } from "@/types";
 import { buildHouseGroup, disposeGroup, findTag, isOpenable, type ElementTag, type OpenState } from "@/lib/geometry";
 import { resolveCollision, spawnPose } from "@/lib/collide";
 import { useTextureMaps } from "@/lib/useTextureMaps";
+import { footstep, isMuted, landThud, setMuted } from "@/lib/sound";
 import CustomizePanel from "./CustomizePanel";
 import InteractiveAnimator from "./InteractiveAnimator";
 
@@ -32,13 +33,111 @@ const JUMP_VELOCITY = 4.8;
 /** Modal input states: WALK owns the mouse via pointer lock; MENU frees it for UI. */
 type InputMode = "walk" | "menu";
 
-function Walker({ analysis, active }: { analysis: HouseAnalysis; active: boolean }): React.JSX.Element | null {
+/** Pulsing highlight on the selected element (skips glass, which is material-shared). */
+function SelectionPulse({ group, selection }: { group: THREE.Group; selection: ElementTag | null }): React.JSX.Element | null {
+  const mats = useRef<THREE.MeshStandardMaterial[]>([]);
+
+  useEffect(() => {
+    const found: THREE.MeshStandardMaterial[] = [];
+    if (selection) {
+      group.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const tag = findTag(mesh);
+        if (tag && tag.kind === selection.kind && tag.id === selection.id) {
+          const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          for (const m of list) {
+            const std = m as THREE.MeshStandardMaterial;
+            if (std.emissive && !std.transparent && !found.includes(std)) found.push(std);
+          }
+        }
+      });
+    }
+    mats.current = found;
+    return () => {
+      for (const m of found) {
+        m.emissive.setHex(0x000000);
+        m.emissiveIntensity = 1;
+      }
+    };
+  }, [group, selection]);
+
+  useFrame(({ clock }) => {
+    if (mats.current.length === 0) return;
+    const pulse = 0.35 + 0.25 * Math.sin(clock.elapsedTime * 5);
+    for (const m of mats.current) {
+      m.emissive.setHex(0x2a4bd7);
+      m.emissiveIntensity = pulse;
+    }
+  });
+
+  return null;
+}
+
+/** Slow-drifting dust motes for interior atmosphere. */
+function DustMotes({ w, d, h }: { w: number; d: number; h: number }): React.JSX.Element {
+  const ref = useRef<THREE.Points>(null);
+  const data = useMemo(() => {
+    const count = 140;
+    const base = new Float32Array(count * 3);
+    const phase = new Float32Array(count);
+    let seed = 1234567;
+    const rand = (): number => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+    for (let i = 0; i < count; i += 1) {
+      base[i * 3] = (rand() - 0.5) * w;
+      base[i * 3 + 1] = 0.3 + rand() * Math.max(0.5, h - 0.5);
+      base[i * 3 + 2] = (rand() - 0.5) * d;
+      phase[i] = rand() * Math.PI * 2;
+    }
+    return { base, phase, count };
+  }, [w, d, h]);
+
+  useFrame(({ clock }) => {
+    const points = ref.current;
+    if (!points) return;
+    const pos = points.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const t = clock.elapsedTime;
+    for (let i = 0; i < data.count; i += 1) {
+      pos.setY(i, data.base[i * 3 + 1] + Math.sin(t * 0.5 + data.phase[i]) * 0.25);
+      pos.setX(i, data.base[i * 3] + Math.sin(t * 0.23 + data.phase[i] * 1.7) * 0.2);
+    }
+    pos.needsUpdate = true;
+  });
+
+  return (
+    <points ref={ref}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[data.base, 3]} />
+      </bufferGeometry>
+      <pointsMaterial
+        size={0.035}
+        color="#ffeecc"
+        transparent
+        opacity={0.45}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+        sizeAttenuation
+      />
+    </points>
+  );
+}
+
+function Walker({ analysis, active, open }: { analysis: HouseAnalysis; active: boolean; open: OpenState }): React.JSX.Element | null {
   const camera = useThree((s) => s.camera);
   const keys = useRef<Set<string>>(new Set());
   const vel = useRef(new THREE.Vector3());
   const vy = useRef(0);
+  const physY = useRef(EYE);
   const grounded = useRef(true);
   const jumpQueued = useRef(false);
+  const bobPhase = useRef(0);
+  const stride = useRef(0);
+  const reduceMotion = useRef(
+    typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
+  );
 
   useEffect(() => {
     const down = (e: KeyboardEvent): void => {
@@ -84,7 +183,7 @@ function Walker({ analysis, active }: { analysis: HouseAnalysis; active: boolean
     vel.current.lerp(target, 1 - Math.exp(-10 * dt));
     const nx = camera.position.x + vel.current.x * dt;
     const nz = camera.position.z + vel.current.z * dt;
-    const solved = resolveCollision(analysis, nx, nz, RADIUS);
+    const solved = resolveCollision(analysis, nx, nz, RADIUS, open);
 
     // Jump + gravity (vertical only; floor is flat).
     if (active && jumpQueued.current && grounded.current) {
@@ -92,14 +191,40 @@ function Walker({ analysis, active }: { analysis: HouseAnalysis; active: boolean
       grounded.current = false;
     }
     jumpQueued.current = false;
-    let y = camera.position.y + vy.current * dt;
+    const hSpeed = Math.hypot(vel.current.x, vel.current.z);
+    let y = physY.current + vy.current * dt;
     vy.current -= GRAVITY * dt;
     if (y <= EYE) {
+      if (!grounded.current && vy.current < -4.5) landThud();
       y = EYE;
       vy.current = 0;
       grounded.current = true;
+      stride.current = 0;
     }
-    camera.position.set(solved.x, y, solved.z);
+    physY.current = y;
+
+    // Footsteps from distance traveled + subtle head-bob.
+    if (grounded.current && hSpeed > 0.3) {
+      bobPhase.current += dt * (4 + hSpeed * 1.6);
+      stride.current += hSpeed * dt;
+      if (stride.current >= (hSpeed > 4 ? 2.3 : 1.9)) {
+        stride.current = 0;
+        footstep(hSpeed > 4);
+      }
+    }
+    const bobY =
+      !reduceMotion.current && grounded.current && hSpeed > 0.3 ? Math.sin(bobPhase.current * 2) * 0.028 : 0;
+    camera.position.set(solved.x, y + bobY, solved.z);
+
+    // FOV kick while sprinting.
+    const perspective = camera as THREE.PerspectiveCamera;
+    if (typeof perspective.fov === "number" && !reduceMotion.current) {
+      const targetFov = hSpeed > 4 ? 78 : 70;
+      if (Math.abs(perspective.fov - targetFov) > 0.05) {
+        perspective.fov += (targetFov - perspective.fov) * Math.min(1, dt * 6);
+        perspective.updateProjectionMatrix();
+      }
+    }
   });
 
   return null;
@@ -148,9 +273,10 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
   const { analysis, textures, showFurniture, open, onToggleOpen, onPatch, onDeleteFurniture, onSetAllWallHeight, onNudge, onClose } = props;
   const containerRef = useRef<HTMLDivElement>(null);
   const lockRef = useRef<{ lock: () => void } | null>(null);
-  const [mode, setMode] = useState<InputMode>("walk");
+  const [mode, setMode] = useState<InputMode>("menu");
   const [selection, setSelection] = useState<ElementTag | null>(null);
   const [target, setTarget] = useState<ElementTag | null>(null);
+  const [mutedUi, setMutedUi] = useState(() => isMuted());
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isTouch] = useState(() => typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true);
   const targetRef = useRef<ElementTag | null>(null);
@@ -176,34 +302,7 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
 
   useEffect(() => () => disposeGroup(group), [group]);
 
-  // Highlight the selected element.
-  useEffect(() => {
-    const touched: THREE.MeshStandardMaterial[] = [];
-    if (selection) {
-      group.traverse((obj) => {
-        const mesh = obj as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        const tag = findTag(mesh);
-        if (tag && tag.kind === selection.kind && tag.id === selection.id) {
-          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-          for (const m of mats) {
-            const std = m as THREE.MeshStandardMaterial;
-            if (std.emissive && !std.transparent) {
-              std.emissive.setHex(0x2a4bd7);
-              std.emissiveIntensity = 0.55;
-              touched.push(std);
-            }
-          }
-        }
-      });
-    }
-    return () => {
-      for (const m of touched) {
-        m.emissive.setHex(0x000000);
-        m.emissiveIntensity = 1;
-      }
-    };
-  }, [group, selection]);
+  // Highlight is animated inside the Canvas (SelectionPulse); nothing static here.
 
   // Fullscreen on open + track state.
   useEffect(() => {
@@ -226,6 +325,21 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
       }
     }, 150);
     return () => clearTimeout(timer);
+  }, []);
+
+  const handleLock = useCallback(() => {
+    setMode("walk");
+    setSelection(null);
+  }, []);
+
+  const handleUnlock = useCallback(() => {
+    setMode("menu");
+  }, []);
+
+  const toggleMute = useCallback(() => {
+    const next = !isMuted();
+    setMuted(next);
+    setMutedUi(next);
   }, []);
 
   const lock = (): void => {
@@ -266,6 +380,7 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
       if (target && (target.tagName === "INPUT" || target.tagName === "SELECT" || target.tagName === "TEXTAREA")) return;
       if (e.code === "KeyQ") exit();
       else if (e.code === "KeyF") toggleFullscreen();
+      else if (e.code === "KeyM") toggleMute();
       else if (e.code === "KeyE" && mode === "walk") {
         const t = targetRef.current;
         if (t && (t.kind === "door" || t.kind === "window")) onToggleOpen(t.kind, t.id);
@@ -273,9 +388,9 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // exit/toggleFullscreen are stable enough; mode is the live dependency.
+    // exit/toggleFullscreen/toggleMute are stable enough; mode is the live dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, onToggleOpen]);
+  }, [mode, onToggleOpen, toggleMute]);
 
   const lampPositions = useMemo(() => {
     const { overallWidth: w, overallDepth: d, wallHeight: h } = analysis.metadata;
@@ -320,16 +435,15 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
           ))}
           <primitive object={group} />
           <InteractiveAnimator group={group} open={open} />
-          <Walker analysis={analysis} active={mode === "walk"} />
+          <Walker analysis={analysis} active={mode === "walk"} open={open} />
           <TargetScanner group={group} active={mode === "walk"} onTarget={setTarget} />
+          <SelectionPulse group={group} selection={selection} />
+          <DustMotes w={analysis.metadata.overallWidth} d={analysis.metadata.overallDepth} h={analysis.metadata.wallHeight} />
           <PointerLockControls
             ref={lockRef as never}
             selector="#walk-lock-veil"
-            onLock={() => {
-              setMode("walk");
-              setSelection(null);
-            }}
-            onUnlock={() => setMode("menu")}
+            onLock={handleLock}
+            onUnlock={handleUnlock}
           />
           <ClickPicker group={group} enabled={mode === "walk"} onPick={setSelection} />
         </Canvas>
@@ -359,6 +473,9 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
           {selection ? ` · customizing ${selection.kind} ${selection.id}` : ""}
         </div>
         <div className="flex gap-2">
+          <button type="button" onClick={toggleMute} className="rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white hover:bg-black/80">
+            {mutedUi ? "Unmute (M)" : "Mute (M)"}
+          </button>
           <button type="button" onClick={toggleFullscreen} className="rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white hover:bg-black/80">
             {isFullscreen ? "Exit full screen (F)" : "Full screen (F)"}
           </button>
@@ -384,8 +501,8 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
           className="absolute inset-0 z-40 flex cursor-pointer items-center justify-center bg-black/55 text-sm text-white"
         >
           <span className="pointer-events-none rounded-xl border border-white/20 bg-black/70 px-6 py-4 text-center">
-            Paused — click to keep walking
-            <span className="mt-1 block text-[11px] text-white/60">or press Q to return to orbit view</span>
+            Click to walk
+            <span className="mt-1 block text-[11px] text-white/60">WASD move · Space jump · E open/close · Q back to orbit</span>
           </span>
         </button>
       )}
