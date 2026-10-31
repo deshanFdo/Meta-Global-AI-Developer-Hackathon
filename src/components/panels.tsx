@@ -1,10 +1,124 @@
 "use client";
 
-import React, { useState } from "react";
-import type { AnalysisSource, GeneratedTextures, HouseAnalysis, SamMatch } from "@/types";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import type { AnalysisSource, EditTool, GeneratedTextures, HouseAnalysis, SamMatch } from "@/types";
 import { estimateCost, type CostTier } from "@/lib/cost";
 import { SAM_CONCEPTS } from "@/lib/sam";
+import { deleteProject, listProjects, loadProject, saveProject } from "@/lib/project-store";
 import type { CameraPreset, LightingMode } from "./Viewer3D";
+
+// ---------------------------------------------------------------------------
+// Build tab: editor tools, undo/redo, element lists
+// ---------------------------------------------------------------------------
+
+const TOOLS: Array<{ id: EditTool; label: string; hint: string }> = [
+  { id: "select", label: "Select", hint: "Orbit, open doors and windows by clicking them." },
+  { id: "move", label: "Move wall", hint: "Drag any wall; its doors and windows ride along." },
+  { id: "add-wall", label: "Add wall", hint: "Click two floor points. Snaps to 0.25 m and 15° angles." },
+  { id: "add-door", label: "Add door", hint: "Click a wall where the door should go." },
+  { id: "add-window", label: "Add window", hint: "Click a wall where the window should go." },
+  { id: "measure", label: "Measure", hint: "Click two points for the distance. Right-click clears." },
+];
+
+export function BuildTab({
+  analysis,
+  tool,
+  setTool,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+  onDelete,
+}: {
+  analysis: HouseAnalysis;
+  tool: EditTool;
+  setTool: (t: EditTool) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  onDelete: (kind: "wall" | "door" | "window", id: string) => void;
+}): React.JSX.Element {
+  const active = TOOLS.find((t) => t.id === tool);
+  return (
+    <div className="space-y-3 text-sm">
+      <div className="flex gap-2">
+        <button type="button" disabled={!canUndo} onClick={onUndo} className="btn-ghost flex-1 px-3 py-1.5 text-xs">
+          Undo
+        </button>
+        <button type="button" disabled={!canRedo} onClick={onRedo} className="btn-ghost flex-1 px-3 py-1.5 text-xs">
+          Redo
+        </button>
+      </div>
+      <div>
+        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Tool</h3>
+        <div className="grid grid-cols-3 gap-1.5">
+          {TOOLS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTool(t.id)}
+              className={`btn-ghost px-2 py-1.5 text-xs ${tool === t.id ? "tab-active" : ""}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[11px] text-[var(--muted)]">{active?.hint}</p>
+      </div>
+      <div>
+        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Elements</h3>
+        <div className="space-y-1.5 text-xs">
+          <details className="rounded-lg border border-[var(--border)]">
+            <summary className="cursor-pointer px-2.5 py-2">Walls ({analysis.walls.length})</summary>
+            <div className="max-h-40 space-y-1 overflow-y-auto px-2.5 pb-2">
+              {analysis.walls.map((w) => (
+                <div key={w.id} className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[var(--muted)]">
+                    {w.id} · {Math.hypot(w.end.x - w.start.x, w.end.y - w.start.y).toFixed(1)} m
+                  </span>
+                  <button type="button" onClick={() => onDelete("wall", w.id)} className="btn-ghost px-2 py-0.5 text-[11px] text-red-300" aria-label={`Delete ${w.id}`}>
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+          </details>
+          <details className="rounded-lg border border-[var(--border)]">
+            <summary className="cursor-pointer px-2.5 py-2">Doors ({analysis.doors.length})</summary>
+            <div className="max-h-40 space-y-1 overflow-y-auto px-2.5 pb-2">
+              {analysis.doors.map((d) => (
+                <div key={d.id} className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[var(--muted)]">
+                    {d.id} · {d.style} · {d.width.toFixed(2)} m
+                  </span>
+                  <button type="button" onClick={() => onDelete("door", d.id)} className="btn-ghost px-2 py-0.5 text-[11px] text-red-300" aria-label={`Delete ${d.id}`}>
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+          </details>
+          <details className="rounded-lg border border-[var(--border)]">
+            <summary className="cursor-pointer px-2.5 py-2">Windows ({analysis.windows.length})</summary>
+            <div className="max-h-40 space-y-1 overflow-y-auto px-2.5 pb-2">
+              {analysis.windows.map((w) => (
+                <div key={w.id} className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[var(--muted)]">
+                    {w.id} · {w.style} · {w.width.toFixed(2)} m
+                  </span>
+                  <button type="button" onClick={() => onDelete("window", w.id)} className="btn-ghost px-2 py-0.5 text-[11px] text-red-300" aria-label={`Delete ${w.id}`}>
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Plan tab: measurements, rooms, assumptions, rough cost
@@ -27,7 +141,12 @@ export function PlanTab({
     <div className="space-y-4 text-sm">
       <div className="flex flex-wrap gap-2 text-xs">
         <span className="rounded-full border border-[var(--border)] px-2.5 py-1">
-          Source: {source === "live" ? "live Muse inference" : "prebuilt sample (no inference)"}
+          Source:{" "}
+          {source === "live"
+            ? "live Muse inference"
+            : source === "file"
+              ? "project file / save"
+              : "prebuilt sample (no inference)"}
         </span>
         <span className="rounded-full border border-[var(--border)] px-2.5 py-1">Model: {model}</span>
         <span className="rounded-full border border-[var(--border)] px-2.5 py-1">
@@ -216,12 +335,14 @@ export function LookTab(props: {
   setAutoRotate: (v: boolean) => void;
   showRoof: boolean;
   setShowRoof: (v: boolean) => void;
-  showFurniture: boolean;
-  setShowFurniture: (v: boolean) => void;
   showLabels: boolean;
   setShowLabels: (v: boolean) => void;
   showDimensions: boolean;
   setShowDimensions: (v: boolean) => void;
+  sunHour: number | null;
+  setSunHour: (v: number | null) => void;
+  showScaleFigure: boolean;
+  setShowScaleFigure: (v: boolean) => void;
 }): React.JSX.Element {
   const {
     textures,
@@ -236,12 +357,14 @@ export function LookTab(props: {
     setAutoRotate,
     showRoof,
     setShowRoof,
-    showFurniture,
-    setShowFurniture,
     showLabels,
     setShowLabels,
     showDimensions,
     setShowDimensions,
+    sunHour,
+    setSunHour,
+    showScaleFigure,
+    setShowScaleFigure,
   } = props;
 
   const texRow = (kind: "facade" | "floor" | "roof", label: string): React.JSX.Element => (
@@ -288,12 +411,35 @@ export function LookTab(props: {
             <button
               key={m}
               type="button"
-              onClick={() => setLighting(m)}
-              className={`btn-ghost px-2 py-1.5 text-xs capitalize ${lighting === m ? "tab-active" : ""}`}
+              onClick={() => {
+                setLighting(m);
+                setSunHour(null);
+              }}
+              className={`btn-ghost px-2 py-1.5 text-xs capitalize ${lighting === m && sunHour === null ? "tab-active" : ""}`}
             >
               {m === "golden" ? "Golden hour" : m}
             </button>
           ))}
+        </div>
+        <div className="mt-1.5 rounded-lg border border-[var(--border)] px-2.5 py-2">
+          <div className="flex items-center justify-between text-xs">
+            <span>Sun time {sunHour === null ? "" : `· ${String(Math.floor(sunHour)).padStart(2, "0")}:${sunHour % 1 === 0 ? "00" : "30"}`}</span>
+            {sunHour !== null && (
+              <button type="button" onClick={() => setSunHour(null)} className="btn-ghost px-2 py-0.5 text-[11px]">
+                Back to preset
+              </button>
+            )}
+          </div>
+          <input
+            type="range"
+            min={6}
+            max={20}
+            step={0.5}
+            value={sunHour ?? 13}
+            onChange={(e) => setSunHour(Number(e.target.value))}
+            className="mt-1 w-full"
+            aria-label="Sun time of day"
+          />
         </div>
       </div>
       <div>
@@ -319,9 +465,9 @@ export function LookTab(props: {
         <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Layers</h3>
         <div className="grid grid-cols-2 gap-1.5">
           {toggle("Roof", showRoof, setShowRoof)}
-          {toggle("Furniture", showFurniture, setShowFurniture)}
           {toggle("Room labels", showLabels, setShowLabels)}
           {toggle("Dimensions", showDimensions, setShowDimensions)}
+          {toggle("Scale figure", showScaleFigure, setShowScaleFigure)}
         </div>
       </div>
     </div>
@@ -420,7 +566,7 @@ export function VerifyTab({
 }
 
 // ---------------------------------------------------------------------------
-// Export tab
+// Export tab: model files, view snapshot, project save/load
 // ---------------------------------------------------------------------------
 
 export function ExportTab({
@@ -428,12 +574,91 @@ export function ExportTab({
   onDXF,
   onCSV,
   busy,
+  project,
+  onImportProject,
 }: {
   onGLB: () => void;
   onDXF: () => void;
   onCSV: () => void;
   busy: boolean;
+  project: { analysis: HouseAnalysis; open: Record<string, boolean>; source: AnalysisSource };
+  onImportProject: (data: { analysis: HouseAnalysis; open: Record<string, boolean>; source: AnalysisSource }) => void;
 }): React.JSX.Element {
+  const [saveName, setSaveName] = useState("");
+  const [saves, setSaves] = useState<Array<{ name: string; savedAt: number }>>([]);
+  const [msg, setMsg] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const refresh = useCallback(() => setSaves(listProjects()), []);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const snapshot = (): void => {
+    const canvas = document.querySelector("#orbit-view canvas") as HTMLCanvasElement | null;
+    if (!canvas) {
+      setMsg("Open the orbit view first.");
+      return;
+    }
+    try {
+      const link = document.createElement("a");
+      link.href = canvas.toDataURL("image/png");
+      link.download = "blueprint3d-view.png";
+      link.click();
+      setMsg(null);
+    } catch {
+      setMsg("Snapshot failed in this browser.");
+    }
+  };
+
+  const exportProject = (): void => {
+    const blob = new Blob(
+      [JSON.stringify({ version: 1, savedAt: Date.now(), analysis: project.analysis, open: project.open, source: project.source })],
+      { type: "application/json" }
+    );
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "blueprint3d-project.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+  };
+
+  const importProjectFile = (file: File): void => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(String(reader.result)) as {
+          analysis?: HouseAnalysis;
+          open?: Record<string, boolean>;
+          source?: AnalysisSource;
+        };
+        if (!data.analysis || !Array.isArray(data.analysis.walls) || !data.analysis.metadata) {
+          throw new Error("bad file");
+        }
+        onImportProject({
+          analysis: data.analysis,
+          open: data.open && typeof data.open === "object" ? data.open : {},
+          source: data.source === "live" || data.source === "sample" || data.source === "file" ? data.source : "file",
+        });
+        setMsg(null);
+      } catch {
+        setMsg("That file is not a BlueprintTo3D project.");
+      }
+    };
+    reader.onerror = () => setMsg("Could not read that file.");
+    reader.readAsText(file);
+  };
+
+  const saveNamed = (): void => {
+    const name = saveName.trim() || `Project ${saves.length + 1}`;
+    const ok = saveProject(name, { analysis: project.analysis, open: project.open, source: project.source });
+    setMsg(ok ? `Saved “${name}” in this browser.` : "Browser storage is full — export a file instead.");
+    if (ok) {
+      setSaveName("");
+      refresh();
+    }
+  };
+
   return (
     <div className="space-y-2 text-sm">
       <button type="button" disabled={busy} onClick={onGLB} className="btn-primary w-full px-4 py-2">
@@ -445,6 +670,84 @@ export function ExportTab({
       <button type="button" disabled={busy} onClick={onCSV} className="btn-ghost w-full px-4 py-2">
         Download schedules (.csv)
       </button>
+      <button type="button" onClick={snapshot} className="btn-ghost w-full px-4 py-2">
+        Snapshot current view (.png)
+      </button>
+      <div className="border-t border-[var(--border)] pt-2">
+        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Project file</h3>
+        <div className="flex gap-2">
+          <button type="button" onClick={exportProject} className="btn-ghost flex-1 px-3 py-1.5 text-xs">
+            Export .json
+          </button>
+          <button type="button" onClick={() => fileRef.current?.click()} className="btn-ghost flex-1 px-3 py-1.5 text-xs">
+            Import .json
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) importProjectFile(file);
+              e.target.value = "";
+            }}
+          />
+        </div>
+      </div>
+      <div className="border-t border-[var(--border)] pt-2">
+        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Browser saves</h3>
+        <div className="flex gap-2">
+          <input
+            value={saveName}
+            onChange={(e) => setSaveName(e.target.value)}
+            placeholder={`Project ${saves.length + 1}`}
+            className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-black/30 px-3 py-1.5 text-xs"
+          />
+          <button type="button" onClick={saveNamed} className="btn-ghost px-3 py-1.5 text-xs">
+            Save
+          </button>
+        </div>
+        {saves.length > 0 ? (
+          <div className="mt-1.5 max-h-32 space-y-1 overflow-y-auto">
+            {saves.map((s) => (
+              <div key={s.name} className="flex items-center justify-between gap-2 text-xs">
+                <span className="truncate text-[var(--muted)]">
+                  {s.name} · {new Date(s.savedAt).toLocaleString()}
+                </span>
+                <span className="flex shrink-0 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const loaded = loadProject(s.name);
+                      if (loaded) {
+                        onImportProject({ analysis: loaded.analysis, open: loaded.open, source: loaded.source });
+                        setMsg(null);
+                      } else setMsg("That save is corrupted.");
+                    }}
+                    className="btn-ghost px-2 py-0.5 text-[11px]"
+                  >
+                    Load
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      deleteProject(s.name);
+                      refresh();
+                    }}
+                    className="btn-ghost px-2 py-0.5 text-[11px] text-red-300"
+                  >
+                    Delete
+                  </button>
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-1 text-[11px] text-[var(--muted)]">No saves yet. Your work also autosaves continuously.</p>
+        )}
+      </div>
+      {msg && <p className="text-[11px] text-[var(--muted)]">{msg}</p>}
       <p className="text-[11px] text-[var(--muted)]">
         GLB opens in Blender, Windows 3D Viewer and most AR tools. DXF R12 opens in AutoCAD and free CAD viewers. All
         exports are generated locally in your browser.

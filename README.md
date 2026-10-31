@@ -1,10 +1,10 @@
 # BlueprintTo3D
 
 Turn a residential floor-plan image into an interactive 3D reconstruction. Muse Spark 1.3 extracts strict-JSON
-structure (walls, doors, windows, rooms, furniture, stairs, roof) with an optional deep furniture-audit pass;
-Three.js rebuilds it locally in the browser. Walk inside in first person, click any door/window/wall/furniture to
-customize it (with Muse recommendations), verify symbols with SAM 3.1, restyle with Muse Image, view in mobile AR,
-walk in VR, and export to GLB, DXF and CSV.
+structure (walls, doors, windows, rooms, stairs, roof) with an optional deep verification pass; Three.js rebuilds
+it locally in the browser. Remodel everything in the Build tab (move/add/delete with undo), walk inside in first
+person, click any element to customize it (with Muse recommendations), verify symbols with SAM 3.1, restyle with
+Muse Image, view in mobile AR, walk in VR, and export to GLB, DXF and CSV.
 
 ## Run locally
 
@@ -27,13 +27,21 @@ npm run build
 
 ## Pipeline
 
-- `POST /api/analyze` — live Spark 1.3 vision extraction plus optional deep furniture audit, or a labeled prebuilt
-  archetype when `isDemo` is set.
+- `POST /api/analyze` — live Spark 1.3 vision extraction plus optional deep verification pass, or a labeled
+  prebuilt archetype when `isDemo` is set.
 - `POST /api/ask` — plan Q&A via Muse Wonder with Spark fallback, else a labeled local heuristic.
 - `POST /api/recommend` — door/window product recommendation for one opening (style, material, color + reason).
 - `POST /api/texture` — Muse Image finishes (facade, floor, roof) applied as tiling textures.
 - `POST /api/sam` — SAM 3.1 symbol grounding, one concept per request, overlaid on the source image.
 - `GET /api/health` — key status and model IDs.
+
+## Editor
+
+- Build tab: select / move-wall / add-wall / add-door / add-window / measure tools, undo + redo (Ctrl+Z/Y),
+  element lists with delete. New walls snap to 0.25 m and 15° angles.
+- Everything is editable: wall geometry, height and thickness, all opening styles and dimensions, roof shape
+  and finishes. Wall delete cascades to its openings; rooms keep no stale references.
+- Projects autosave to the browser, with named slots and JSON export/import in the Export tab.
 
 ## Current limits
 
@@ -46,10 +54,10 @@ API spend.
 ## Demo script (2 minutes)
 
 1. Load the Nordic Villa sample — orbit the 3D model, click a door to swing it open.
-2. Click Walk inside — WASD + Space through the rooms, E opens what you're looking at, click customizes it.
-3. Upload a real plan with the deep furniture pass — show the source-vs-2D comparison and evidence notes.
-4. Run SAM verification — show boxes on the source image; generate the three Image textures.
-5. View in AR on a phone, or enter VR: trigger opens, grip restyles. Download the GLB.
+2. Build tab: drag a wall, draw a new one, add a window to it, undo once.
+3. Click Walk inside — WASD + Space through the rooms, E opens what you're looking at, click customizes it.
+4. Run SAM verification, sweep the sun-time slider, snapshot a PNG.
+5. View in AR on a phone, or enter VR: trigger opens, grip restyles. Export GLB/DXF/CSV.
 
 ## Walk controls
 

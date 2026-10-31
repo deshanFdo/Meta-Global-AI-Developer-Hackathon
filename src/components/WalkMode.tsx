@@ -15,11 +15,10 @@ import InteractiveAnimator from "./InteractiveAnimator";
 interface WalkModeProps {
   analysis: HouseAnalysis;
   textures: GeneratedTextures;
-  showFurniture: boolean;
   open: OpenState;
   onToggleOpen: (kind: "door" | "window", id: string) => void;
   onPatch: (kind: ElementTag["kind"], id: string, patch: Record<string, unknown>) => void;
-  onDeleteFurniture: (id: string) => void;
+  onDelete: (kind: "wall" | "door" | "window", id: string) => void;
   onSetAllWallHeight: (h: number) => void;
   onNudge: (kind: "door" | "window", id: string, dir: 1 | -1) => void;
   onClose: () => void;
@@ -270,7 +269,7 @@ function TargetScanner({
 }
 
 export default function WalkMode(props: WalkModeProps): React.JSX.Element {
-  const { analysis, textures, showFurniture, open, onToggleOpen, onPatch, onDeleteFurniture, onSetAllWallHeight, onNudge, onClose } = props;
+  const { analysis, textures, open, onToggleOpen, onPatch, onDelete, onSetAllWallHeight, onNudge, onClose } = props;
   const containerRef = useRef<HTMLDivElement>(null);
   const lockRef = useRef<{ lock: () => void } | null>(null);
   const [mode, setMode] = useState<InputMode>("menu");
@@ -289,13 +288,12 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
     () =>
       buildHouseGroup(analysis, {
         showRoof: true,
-        showFurniture,
         facadeMap: maps.facade ?? null,
         floorMap: maps.floor ?? null,
         roofMap: maps.roof ?? null,
         open,
       }),
-    [analysis, showFurniture, maps, open]
+    [analysis, maps, open]
   );
   const groupRef = useRef<THREE.Group>(group);
   groupRef.current = group;
@@ -519,8 +517,8 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
               if (selection.kind === "door" || selection.kind === "window") onToggleOpen(selection.kind, selection.id);
             }}
             onPatch={onPatch}
-            onDeleteFurniture={(id) => {
-              onDeleteFurniture(id);
+            onDelete={(kind, id) => {
+              onDelete(kind, id);
               setSelection(null);
             }}
             onSetAllWallHeight={onSetAllWallHeight}

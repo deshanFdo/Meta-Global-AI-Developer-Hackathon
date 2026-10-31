@@ -1,18 +1,19 @@
 "use client";
 
 import React, { useState } from "react";
-import type { Door, FurnitureItem, HouseAnalysis, PlanWindow, Wall } from "@/types";
+import type { Door, HouseAnalysis, PlanWindow, Wall } from "@/types";
 import type { ElementTag } from "@/lib/geometry";
 import { isOpenable } from "@/lib/geometry";
 
 interface Props {
   analysis: HouseAnalysis;
   selection: ElementTag;
-  /** Current open state for the selected door/window (undefined for walls/furniture). */
+  /** Current open state for the selected door/window (undefined for walls/roof). */
   open?: boolean;
   onToggleOpen?: () => void;
   onPatch: (kind: ElementTag["kind"], id: string, patch: Record<string, unknown>) => void;
-  onDeleteFurniture: (id: string) => void;
+  /** Delete a wall (cascades its doors/windows), door or window. */
+  onDelete: (kind: "wall" | "door" | "window", id: string) => void;
   /** Set every wall (and the default ceiling height) to h meters. */
   onSetAllWallHeight: (h: number) => void;
   /** Shift a door/window along its wall by dir * 0.1 m. */
@@ -26,10 +27,6 @@ export const DOOR_MATS = ["wood", "glass", "metal", "composite"];
 export const WIN_STYLES = ["single-hung", "double-hung", "casement", "bay", "sliding", "fixed", "skylight"];
 export const WIN_MATS = ["wood", "vinyl", "aluminum"];
 export const WALL_MATS = ["brick", "concrete", "drywall", "wood", "stone", "glass", "stucco", "vinyl_siding"];
-export const FURN_TYPES = [
-  "bed_double", "bed_single", "sofa", "dining_table", "chair", "kitchen_counter", "toilet", "bathtub",
-  "sink", "desk", "wardrobe", "coffee_table", "nightstand", "plant", "tv_unit", "furnace", "washing_machine", "column",
-];
 export const ROOF_TYPES = ["gable", "hip", "flat", "mansard", "gambrel", "shed", "butterfly"];
 export const ROOF_MATS = ["asphalt_shingle", "tile", "metal", "slate", "wood_shake"];
 
@@ -50,22 +47,20 @@ function num(value: string, fallback: number, min: number, max: number): number 
   return Math.max(min, Math.min(max, parsed));
 }
 
-export default function CustomizePanel({ analysis, selection, open, onToggleOpen, onPatch, onDeleteFurniture, onSetAllWallHeight, onNudge, onClose, onResume }: Props): React.JSX.Element {
+export default function CustomizePanel({ analysis, selection, open, onToggleOpen, onPatch, onDelete, onSetAllWallHeight, onNudge, onClose, onResume }: Props): React.JSX.Element {
   const door: Door | undefined =
     selection.kind === "door" ? analysis.doors.find((d) => d.id === selection.id) : undefined;
   const win: PlanWindow | undefined =
     selection.kind === "window" ? analysis.windows.find((w) => w.id === selection.id) : undefined;
   const wall: Wall | undefined =
     selection.kind === "wall" ? analysis.walls.find((w) => w.id === selection.id) : undefined;
-  const furn: FurnitureItem | undefined =
-    selection.kind === "furniture" ? (analysis.furniture ?? []).find((f) => f.id === selection.id) : undefined;
   const roof = selection.kind === "roof" ? analysis.roof : undefined;
 
   const [recLoading, setRecLoading] = useState(false);
   const [recError, setRecError] = useState<string | null>(null);
   const [rec, setRec] = useState<{ patch: Record<string, string | number>; reason: string; model: string } | null>(null);
 
-  if (!door && !win && !wall && !furn && !roof) {
+  if (!door && !win && !wall && !roof) {
     return (
       <div className="text-xs text-[var(--muted)]">
         <p>This element is no longer in the model.</p>
@@ -83,9 +78,7 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
         ? `Window ${win.id} · ${win.width.toFixed(2)} × ${win.height.toFixed(2)} m`
         : wall !== undefined
           ? `Wall ${wall.id} · ${wall.isExterior ? "exterior" : "interior"}`
-          : roof !== undefined
-            ? `Roof · ${roof.type} · ${roof.pitch.toFixed(0)}° pitch`
-            : `Furniture ${furn?.id} · ${furn?.type.replace(/_/g, " ")}`;
+          : `Roof · ${roof?.type} · ${roof?.pitch.toFixed(0)}° pitch`;
 
   const runRecommend = async (): Promise<void> => {
     if (door === undefined && win === undefined) return;
@@ -163,6 +156,9 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
               0.1 m →
             </button>
           </div>
+          <button type="button" onClick={() => { onDelete("door", door.id); onClose(); }} className="btn-ghost w-full px-3 py-1.5 text-[11px] text-red-300">
+            Delete this door
+          </button>
         </div>
       )}
 
@@ -218,6 +214,9 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
               0.1 m →
             </button>
           </div>
+          <button type="button" onClick={() => { onDelete("window", win.id); onClose(); }} className="btn-ghost w-full px-3 py-1.5 text-[11px] text-red-300">
+            Delete this window
+          </button>
         </div>
       )}
 
@@ -247,6 +246,27 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
           </div>
           <button type="button" onClick={() => onSetAllWallHeight(wall.height)} className="btn-ghost w-full px-3 py-1.5 text-[11px]">
             Set all {analysis.walls.length} walls to {wall.height.toFixed(2)} m
+          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <Row label="Start X (m)">
+              <input type="number" step="0.1" defaultValue={wall.start.x.toFixed(2)} key={`wsx-${wall.start.x}`} className={inputCls}
+                onBlur={(e) => onPatch("wall", wall.id, { start: { x: Number(e.target.value), y: wall.start.y } })} />
+            </Row>
+            <Row label="Start Y (m)">
+              <input type="number" step="0.1" defaultValue={wall.start.y.toFixed(2)} key={`wsy-${wall.start.y}`} className={inputCls}
+                onBlur={(e) => onPatch("wall", wall.id, { start: { x: wall.start.x, y: Number(e.target.value) } })} />
+            </Row>
+            <Row label="End X (m)">
+              <input type="number" step="0.1" defaultValue={wall.end.x.toFixed(2)} key={`wex-${wall.end.x}`} className={inputCls}
+                onBlur={(e) => onPatch("wall", wall.id, { end: { x: Number(e.target.value), y: wall.end.y } })} />
+            </Row>
+            <Row label="End Y (m)">
+              <input type="number" step="0.1" defaultValue={wall.end.y.toFixed(2)} key={`wey-${wall.end.y}`} className={inputCls}
+                onBlur={(e) => onPatch("wall", wall.id, { end: { x: wall.end.x, y: Number(e.target.value) } })} />
+            </Row>
+          </div>
+          <button type="button" onClick={() => { onDelete("wall", wall.id); onClose(); }} className="btn-ghost w-full px-3 py-1.5 text-[11px] text-red-300">
+            Delete wall + its doors/windows
           </button>
           <p className="text-[11px] text-[var(--muted)]">
             Length {Math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y).toFixed(2)} m
@@ -285,43 +305,6 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
               onChange={(e) => onPatch("roof", "roof", { color: e.target.value })}
               className="h-8 w-full cursor-pointer rounded-md border border-[var(--border)] bg-black/30" />
           </Row>
-        </div>
-      )}
-
-      {furn !== undefined && (
-        <div className="space-y-2">
-          <Row label="Type">
-            <select value={furn.type} onChange={(e) => onPatch("furniture", furn.id, { type: e.target.value })} className={inputCls}>
-              {FURN_TYPES.map((s) => (
-                <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
-              ))}
-            </select>
-          </Row>
-          <Row label="Rotation">
-            <select value={furn.rotation} onChange={(e) => onPatch("furniture", furn.id, { rotation: Number(e.target.value) })} className={inputCls}>
-              {[0, 90, 180, 270].map((r) => (
-                <option key={r} value={r}>{r}°</option>
-              ))}
-            </select>
-          </Row>
-          <div className="grid grid-cols-3 gap-2">
-            <Row label="W (m)">
-              <input type="number" step="0.05" min={0.15} max={5} defaultValue={furn.width.toFixed(2)} key={`fw-${furn.width}`} className={inputCls}
-                onBlur={(e) => onPatch("furniture", furn.id, { width: num(e.target.value, furn.width, 0.15, 5) })} />
-            </Row>
-            <Row label="D (m)">
-              <input type="number" step="0.05" min={0.15} max={5} defaultValue={furn.depth.toFixed(2)} key={`fd-${furn.depth}`} className={inputCls}
-                onBlur={(e) => onPatch("furniture", furn.id, { depth: num(e.target.value, furn.depth, 0.15, 5) })} />
-            </Row>
-            <Row label="H (m)">
-              <input type="number" step="0.05" min={0.15} max={3} defaultValue={furn.height.toFixed(2)} key={`fh-${furn.height}`} className={inputCls}
-                onBlur={(e) => onPatch("furniture", furn.id, { height: num(e.target.value, furn.height, 0.15, 3) })} />
-            </Row>
-          </div>
-          {furn.evidence && <p className="text-[11px] text-[var(--muted)]">Detected as: {furn.evidence}</p>}
-          <button type="button" onClick={() => onDeleteFurniture(furn.id)} className="btn-ghost w-full px-3 py-1.5 text-xs text-red-300">
-            Remove this item
-          </button>
         </div>
       )}
 

@@ -1,6 +1,5 @@
 import * as THREE from "three";
 import type { Door, HouseAnalysis, PlanWindow, Wall } from "@/types";
-import { buildFurniture, nominalSize } from "./furnish";
 
 // ---------------------------------------------------------------------------
 // buildHouseGroup: HouseAnalysis -> THREE.Group
@@ -10,7 +9,6 @@ import { buildFurniture, nominalSize } from "./furnish";
 
 export interface GeometryOptions {
   showRoof: boolean;
-  showFurniture: boolean;
   facadeMap?: THREE.Texture | null;
   floorMap?: THREE.Texture | null;
   roofMap?: THREE.Texture | null;
@@ -79,7 +77,7 @@ export function updatePivots(group: THREE.Group, dt: number): void {
 
 /** Tag attached to selectable meshes so walk/VR modes can identify elements. */
 export interface ElementTag {
-  kind: "wall" | "door" | "window" | "furniture" | "roof";
+  kind: "wall" | "door" | "window" | "roof";
   id: string;
 }
 
@@ -265,22 +263,6 @@ export function buildHouseGroup(analysis: HouseAnalysis, opts: GeometryOptions):
 
   // ---- roof ----
   if (opts.showRoof) buildRoof(group, analysis, matRoof);
-
-  // ---- furniture ----
-  if (opts.showFurniture) {
-    for (const item of analysis.furniture ?? []) {
-      const g = buildFurniture(item.type);
-      g.position.set(toX(item.position.x), 0, toZ(item.position.y));
-      g.rotation.y = (item.rotation * Math.PI) / 180;
-      tag(g, "furniture", item.id);
-      // Relative scaling: builders have true footprints, so divide, never multiply blindly.
-      const nom = nominalSize(item.type);
-      const axis = (v: number, n: number): number =>
-        Number.isFinite(v) && v > 0 && n > 0 ? Math.max(0.25, Math.min(5, v / n)) : 1;
-      g.scale.set(axis(item.width, nom.w), axis(item.height, nom.h), axis(item.depth, nom.d));
-      group.add(g);
-    }
-  }
 
   return group;
 }

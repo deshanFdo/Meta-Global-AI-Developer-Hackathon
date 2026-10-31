@@ -97,19 +97,6 @@ export function resolveCollision(
         pushOut(ax + ux * s0, az + uz * s0, ax + ux * s1, az + uz * s1, wall.thickness / 2);
       }
     }
-    for (const item of analysis.furniture ?? []) {
-      const fx = toX(item.position.x);
-      const fz = toZ(item.position.y);
-      const fr = Math.max(0.15, Math.min(item.width, item.depth) / 2);
-      const dx = px - fx;
-      const dz = pz - fz;
-      const dist = Math.hypot(dx, dz);
-      if (dist < radius + fr && dist > 1e-6) {
-        const push = radius + fr - dist;
-        px += (dx / dist) * push;
-        pz += (dz / dist) * push;
-      }
-    }
   }
 
   px = Math.max(-w / 2 - 2, Math.min(w / 2 + 2, px));

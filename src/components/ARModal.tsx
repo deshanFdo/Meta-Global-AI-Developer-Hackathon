@@ -67,7 +67,6 @@ export default function ARModal({ analysis, textures, open, onClose }: Props): R
         };
         const group = buildHouseGroup(analysis, {
           showRoof: true,
-          showFurniture: true,
           facadeMap: await load(textures.facade),
           floorMap: await load(textures.floor),
           roofMap: await load(textures.roof),

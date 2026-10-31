@@ -13,7 +13,6 @@ import InteractiveAnimator from "./InteractiveAnimator";
 interface VRWalkProps {
   analysis: HouseAnalysis;
   textures: GeneratedTextures;
-  showFurniture: boolean;
   open: OpenState;
   onToggleOpen: (kind: "door" | "window", id: string) => void;
   onPatch: (kind: ElementTag["kind"], id: string, patch: Record<string, unknown>) => void;
@@ -33,14 +32,13 @@ function nextIn(order: string[], current: string): string {
 interface SceneProps {
   analysis: HouseAnalysis;
   textures: GeneratedTextures;
-  showFurniture: boolean;
   open: OpenState;
   onToggleOpen: (kind: "door" | "window", id: string) => void;
   onPatch: (kind: ElementTag["kind"], id: string, patch: Record<string, unknown>) => void;
   onGl: (gl: THREE.WebGLRenderer) => void;
 }
 
-function VRScene({ analysis, textures, showFurniture, open, onToggleOpen, onPatch, onGl }: SceneProps): React.JSX.Element {
+function VRScene({ analysis, textures, open, onToggleOpen, onPatch, onGl }: SceneProps): React.JSX.Element {
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
   const scene = useThree((s) => s.scene);
@@ -51,13 +49,12 @@ function VRScene({ analysis, textures, showFurniture, open, onToggleOpen, onPatc
     () =>
       buildHouseGroup(analysis, {
         showRoof: true,
-        showFurniture,
         facadeMap: maps.facade ?? null,
         floorMap: maps.floor ?? null,
         roofMap: maps.roof ?? null,
         open,
       }),
-    [analysis, showFurniture, maps, open]
+    [analysis, maps, open]
   );
   useEffect(() => () => disposeGroup(group), [group]);
 
@@ -115,10 +112,10 @@ function VRScene({ analysis, textures, showFurniture, open, onToggleOpen, onPatc
       }
     };
 
-    // Trigger: open/close doors and windows, rotate furniture, inspect walls.
+    // Trigger: open/close doors and windows, inspect walls and roof.
     const onTrigger = (controller: THREE.Group, tag: ElementTag, point: THREE.Vector3): void => {
       void controller;
-      const { analysis: a, onToggleOpen: toggle, onPatch: patch, open: openMap } = live.current;
+      const { analysis: a, onToggleOpen: toggle, open: openMap } = live.current;
       if (tag.kind === "door" || tag.kind === "window") {
         const style =
           tag.kind === "door"
@@ -131,11 +128,6 @@ function VRScene({ analysis, textures, showFurniture, open, onToggleOpen, onPatc
         toggle(tag.kind, tag.id);
         const willOpen = openMap[openKey(tag.kind, tag.id)] !== true;
         flash(`${tag.id} → ${willOpen ? "open" : "closed"}`, point);
-      } else if (tag.kind === "furniture") {
-        const current = (a.furniture ?? []).find((f) => f.id === tag.id)?.rotation ?? 0;
-        const next = (current + 90) % 360;
-        patch("furniture", tag.id, { rotation: next });
-        flash(`${tag.id} → rotated ${next}°`, point);
       } else if (tag.kind === "roof") {
         flash(`roof · ${a.roof.type} · ${a.roof.pitch.toFixed(0)}° pitch`, point);
       } else {
@@ -174,11 +166,6 @@ function VRScene({ analysis, textures, showFurniture, open, onToggleOpen, onPatc
           const next = nextIn(ROOF_ORDER, a.roof.type);
           patch("roof", "roof", { type: next });
           flash(`roof → ${next}`, hit.point);
-        } else {
-          const current = (a.furniture ?? []).find((f) => f.id === tag.id)?.rotation ?? 0;
-          const next = (current + 90) % 360;
-          patch("furniture", tag.id, { rotation: next });
-          flash(`${tag.id} → rotated ${next}°`, hit.point);
         }
         return;
       }
@@ -269,7 +256,7 @@ function VRScene({ analysis, textures, showFurniture, open, onToggleOpen, onPatc
   );
 }
 
-export default function VRWalk({ analysis, textures, showFurniture, open, onToggleOpen, onPatch, onClose }: VRWalkProps): React.JSX.Element {
+export default function VRWalk({ analysis, textures, open, onToggleOpen, onPatch, onClose }: VRWalkProps): React.JSX.Element {
   const glRef = useRef<THREE.WebGLRenderer | null>(null);
   const sessionRef = useRef<XRSession | null>(null);
   const [support, setSupport] = useState<"checking" | "yes" | "no">("checking");
@@ -330,7 +317,6 @@ export default function VRWalk({ analysis, textures, showFurniture, open, onTogg
         <VRScene
           analysis={analysis}
           textures={textures}
-          showFurniture={showFurniture}
           open={open}
           onToggleOpen={onToggleOpen}
           onPatch={onPatch}
@@ -363,7 +349,7 @@ export default function VRWalk({ analysis, textures, showFurniture, open, onTogg
                 <ul className="list-disc space-y-1 pl-5 text-xs text-[var(--muted)]">
                   <li>Left thumbstick walks (with wall collision), right thumbstick turns.</li>
                   <li>Trigger opens/closes the door or window you point at.</li>
-                  <li>Grip restyles it instead (doors/windows cycle styles, furniture rotates).</li>
+                  <li>Grip restyles it instead (doors, windows, walls and roof cycle options).</li>
                 </ul>
                 <button type="button" onClick={enter} className="btn-primary w-full px-4 py-2.5">
                   Enter VR

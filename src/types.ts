@@ -156,7 +156,7 @@ export interface HouseAnalysis {
 }
 
 /** Where the current analysis came from. Always shown in the UI. */
-export type AnalysisSource = "live" | "sample";
+export type AnalysisSource = "live" | "sample" | "file";
 
 export interface GeneratedTextures {
   facade?: string; // data URL
@@ -186,3 +186,6 @@ export type PipelineStage =
   | "analyzing"
   | "complete"
   | "error";
+
+/** Orbit-view editor tool. */
+export type EditTool = "select" | "move" | "add-wall" | "add-door" | "add-window" | "measure";

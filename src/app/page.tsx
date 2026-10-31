@@ -1,16 +1,17 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import * as THREE from "three";
-import type { AnalysisSource, GeneratedTextures, HouseAnalysis, SamMatch } from "@/types";
+import type { AnalysisSource, GeneratedTextures, HouseAnalysis, SamMatch, EditTool } from "@/types";
 import { buildHouseGroup, disposeGroup, isOpenable, openKey, type OpenState } from "@/lib/geometry";
 import { doorSound } from "@/lib/sound";
 import { downloadText, exportGroupToGLB, houseToCSV, houseToDXF } from "@/lib/exporters";
+import { clearAutosave, loadAutosave, saveAutosave } from "@/lib/project-store";
 import UploadCard, { type ArchetypeKind } from "@/components/UploadCard";
 import PlanCompare from "@/components/PlanCompare";
-import { AskTab, ExportTab, LookTab, PlanTab, VerifyTab, type QaMessage, type SparkCounts } from "@/components/panels";
-import { DOOR_MATS, DOOR_STYLES, FURN_TYPES, ROOF_MATS, ROOF_TYPES, WALL_MATS, WIN_MATS, WIN_STYLES } from "@/components/CustomizePanel";
+import { AskTab, BuildTab, ExportTab, LookTab, PlanTab, VerifyTab, type QaMessage, type SparkCounts } from "@/components/panels";
+import { DOOR_MATS, DOOR_STYLES, ROOF_MATS, ROOF_TYPES, WALL_MATS, WIN_MATS, WIN_STYLES } from "@/components/CustomizePanel";
 import type { ElementTag } from "@/lib/geometry";
 import type { CameraPreset, LightingMode } from "@/components/Viewer3D";
 
@@ -27,7 +28,7 @@ const WalkMode = dynamic(() => import("@/components/WalkMode"), { ssr: false });
 const VRWalk = dynamic(() => import("@/components/VRWalk"), { ssr: false });
 const ARModal = dynamic(() => import("@/components/ARModal"), { ssr: false });
 
-type Tab = "plan" | "ask" | "look" | "verify" | "export";
+type Tab = "plan" | "build" | "ask" | "look" | "verify" | "export";
 
 const SAMPLE_ASSET: Record<ArchetypeKind, string> = {
   villa: "/sample-floorplan.png",
@@ -88,6 +89,25 @@ function slug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "house";
 }
 
+function uid(prefix: string): string {
+  return `${prefix}-u${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
+}
+
+function FlowStep({ done, n, label }: { done: boolean; n: number; label: string }): React.JSX.Element {
+  return (
+    <li className="flex items-center gap-2">
+      <span
+        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold ${
+          done ? "border-[var(--success)] bg-green-500/15 text-[var(--success)]" : "border-[var(--border)] text-[var(--muted)]"
+        }`}
+      >
+        {done ? "✓" : n}
+      </span>
+      <span className={done ? "text-[var(--muted)] line-through" : ""}>{label}</span>
+    </li>
+  );
+}
+
 export default function Home(): React.JSX.Element {
   const [apiLive, setApiLive] = useState<boolean | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -112,7 +132,6 @@ export default function Home(): React.JSX.Element {
   const [lighting, setLighting] = useState<LightingMode>("day");
   const [cameraPreset, setCameraPreset] = useState<CameraPreset>("orbit");
   const [showRoof, setShowRoof] = useState(true);
-  const [showFurniture, setShowFurniture] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
   const [showDimensions, setShowDimensions] = useState(false);
   const [deep, setDeep] = useState(true);
@@ -122,13 +141,88 @@ export default function Home(): React.JSX.Element {
   const [vrOpen, setVrOpen] = useState(false);
   const [openMap, setOpenMap] = useState<OpenState>({});
   const [autoRotate, setAutoRotate] = useState(false);
+  const [editTool, setEditTool] = useState<EditTool>("select");
+  const [sunHour, setSunHour] = useState<number | null>(null);
+  const [showScaleFigure, setShowScaleFigure] = useState(false);
+  const [walkVisited, setWalkVisited] = useState(false);
+  const [restoredNote, setRestoredNote] = useState<string | null>(null);
+
+  // Undo/redo across every model mutation (refs + tick to stay StrictMode-safe).
+  const analysisRef = useRef<HouseAnalysis | null>(null);
+  analysisRef.current = analysis;
+  const pastRef = useRef<HouseAnalysis[]>([]);
+  const futureRef = useRef<HouseAnalysis[]>([]);
+  const [histTick, setHistTick] = useState(0);
+  const canUndo = pastRef.current.length > 0;
+  const canRedo = futureRef.current.length > 0;
+  void histTick;
+
+  const commit = useCallback((mutate: (prev: HouseAnalysis) => HouseAnalysis) => {
+    const current = analysisRef.current;
+    if (!current) return;
+    pastRef.current = [...pastRef.current.slice(-49), structuredClone(current)];
+    futureRef.current = [];
+    setAnalysis(mutate(current));
+    setEdited(true);
+    setHistTick((t) => t + 1);
+  }, []);
+
+  /** Snapshot once before a drag; moves during the drag don't add history. */
+  const checkpoint = useCallback(() => {
+    const current = analysisRef.current;
+    if (!current) return;
+    pastRef.current = [...pastRef.current.slice(-49), structuredClone(current)];
+    futureRef.current = [];
+    setHistTick((t) => t + 1);
+  }, []);
+
+  const undo = useCallback(() => {
+    const current = analysisRef.current;
+    const prev = pastRef.current.pop();
+    if (!prev || !current) return;
+    futureRef.current.unshift(current);
+    if (futureRef.current.length > 50) futureRef.current.length = 50;
+    setAnalysis(prev);
+    setEdited(true);
+    setHistTick((t) => t + 1);
+  }, []);
+
+  const redo = useCallback(() => {
+    const current = analysisRef.current;
+    const next = futureRef.current.shift();
+    if (!next || !current) return;
+    pastRef.current.push(current);
+    if (pastRef.current.length > 50) pastRef.current.shift();
+    setAnalysis(next);
+    setEdited(true);
+    setHistTick((t) => t + 1);
+  }, []);
 
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
       .then((j) => setApiLive(j.live === true))
       .catch(() => setApiLive(false));
+    // Restore the autosaved model once on load (plan image is not stored).
+    const auto = loadAutosave();
+    if (auto) {
+      setAnalysis(auto.analysis);
+      setOpenMap(auto.open ?? {});
+      setSource(auto.source);
+      setModel("autosave");
+      setEdited(true);
+      setRestoredNote(`Restored autosave from ${new Date(auto.savedAt).toLocaleString()}.`);
+    }
   }, []);
+
+  // Continuous autosave (debounced).
+  useEffect(() => {
+    if (!analysis) return;
+    const timer = setTimeout(() => {
+      saveAutosave({ analysis, open: openMap, source });
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [analysis, openMap, source]);
 
   const resetForNewAnalysis = useCallback(() => {
     setTextures({});
@@ -136,8 +230,31 @@ export default function Home(): React.JSX.Element {
     setMatches([]);
     setEdited(false);
     setOpenMap({});
+    pastRef.current = [];
+    futureRef.current = [];
+    setHistTick((t) => t + 1);
+    setEditTool("select");
     setTab("plan");
   }, []);
+
+  // Global undo/redo (ignored while typing or walking).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "SELECT" || target.tagName === "TEXTAREA")) return;
+      if (walkOpen || arOpen || vrOpen) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.code === "KeyZ" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if ((mod && e.code === "KeyY") || (mod && e.shiftKey && e.code === "KeyZ")) {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [walkOpen, arOpen, vrOpen, undo, redo]);
 
   const handleFile = useCallback(async (file: File) => {
     setError(null);
@@ -290,7 +407,6 @@ export default function Home(): React.JSX.Element {
       };
       const group = buildHouseGroup(analysis, {
         showRoof: true,
-        showFurniture: true,
         facadeMap: await load(textures.facade),
         floorMap: await load(textures.floor),
         roofMap: await load(textures.roof),
@@ -319,9 +435,16 @@ export default function Home(): React.JSX.Element {
     const isHex = (v: unknown): v is string => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v);
     const pick = (v: unknown, allowed: string[]): string | null =>
       typeof v === "string" && (allowed as string[]).includes(v) ? v : null;
+    const isPoint = (v: unknown): v is { x: number; y: number } => {
+      if (!v || typeof v !== "object") return false;
+      const p = v as Record<string, unknown>;
+      return (
+        typeof p.x === "number" && Number.isFinite(p.x) && p.x > -10 && p.x < 200 &&
+        typeof p.y === "number" && Number.isFinite(p.y) && p.y > -10 && p.y < 200
+      );
+    };
 
-    setAnalysis((prev) => {
-      if (!prev) return prev;
+    commit((prev) => {
       if (kind === "door") {
         return {
           ...prev,
@@ -367,12 +490,17 @@ export default function Home(): React.JSX.Element {
           walls: prev.walls.map((w) => {
             if (w.id !== id) return w;
             const material = pick(patch.material, WALL_MATS);
+            const start = isPoint(patch.start) ? { x: patch.start.x, y: patch.start.y } : w.start;
+            const end = isPoint(patch.end) ? { x: patch.end.x, y: patch.end.y } : w.end;
+            const len = Math.hypot(end.x - start.x, end.y - start.y);
             return {
               ...w,
               ...(material ? { material: material as typeof w.material } : {}),
               ...(isHex(patch.color) ? { color: patch.color } : {}),
               height: clampNum(patch.height, w.height, 2.0, 4.5),
               thickness: clampNum(patch.thickness, w.thickness, 0.05, 0.6),
+              // Reject reshapes that would collapse the wall.
+              ...(len >= 0.3 ? { start, end } : {}),
             };
           }),
         };
@@ -392,52 +520,153 @@ export default function Home(): React.JSX.Element {
           },
         };
       }
-      if (kind !== "furniture") return prev;
+      return prev;
+    });
+  }, [commit]);
+
+  const handleDeleteElement = useCallback((kind: "wall" | "door" | "window", id: string) => {
+    commit((prev) => {
+      if (kind === "door") {
+        setOpenMap((m) => {
+          if (!m[`door:${id}`]) return m;
+          const next = { ...m };
+          delete next[`door:${id}`];
+          return next;
+        });
+        return { ...prev, doors: prev.doors.filter((d) => d.id !== id) };
+      }
+      if (kind === "window") {
+        setOpenMap((m) => {
+          if (!m[`window:${id}`]) return m;
+          const next = { ...m };
+          delete next[`window:${id}`];
+          return next;
+        });
+        return { ...prev, windows: prev.windows.filter((w) => w.id !== id) };
+      }
+      // Wall delete cascades to its doors/windows and cleans room references.
+      const goneDoors = prev.doors.filter((d) => d.wallId === id).map((d) => d.id);
+      const goneWins = prev.windows.filter((w) => w.wallId === id).map((w) => w.id);
+      if (goneDoors.length + goneWins.length > 0) {
+        setOpenMap((m) => {
+          const next = { ...m };
+          for (const did of goneDoors) delete next[`door:${did}`];
+          for (const wid of goneWins) delete next[`window:${wid}`];
+          return next;
+        });
+      }
       return {
         ...prev,
-        furniture: (prev.furniture ?? []).map((f) => {
-          if (f.id !== id) return f;
-          const type = pick(patch.type, FURN_TYPES);
-          const rotation =
-            patch.rotation === 0 || patch.rotation === 90 || patch.rotation === 180 || patch.rotation === 270
-              ? patch.rotation
-              : f.rotation;
-          return {
-            ...f,
-            ...(type ? { type: type as typeof f.type } : {}),
-            rotation,
-            width: clampNum(patch.width, f.width, 0.15, 5),
-            depth: clampNum(patch.depth, f.depth, 0.15, 5),
-            height: clampNum(patch.height, f.height, 0.15, 3),
-          };
-        }),
+        walls: prev.walls.filter((w) => w.id !== id),
+        doors: prev.doors.filter((d) => d.wallId !== id),
+        windows: prev.windows.filter((w) => w.wallId !== id),
+        rooms: prev.rooms.map((r) => ({ ...r, wallIds: r.wallIds.filter((wid) => wid !== id) })),
       };
     });
-    setEdited(true);
-  }, []);
+  }, [commit]);
 
-  const handleDeleteFurniture = useCallback((id: string) => {
-    setAnalysis((prev) => (prev ? { ...prev, furniture: (prev.furniture ?? []).filter((f) => f.id !== id) } : prev));
+  const handleAddWall = useCallback((start: { x: number; y: number }, end: { x: number; y: number }) => {
+    commit((prev) => {
+      const len = Math.hypot(end.x - start.x, end.y - start.y);
+      if (len < 0.3) return prev;
+      const id = uid("wall");
+      const wall: HouseAnalysis["walls"][number] = {
+        id,
+        start: { ...start },
+        end: { ...end },
+        thickness: 0.15,
+        height: prev.metadata.wallHeight,
+        material: "drywall",
+        color: "#F5F5F0",
+        isExterior: false,
+      };
+      // Grow the bounds if the wall extends past them.
+      const maxX = Math.max(prev.metadata.overallWidth, start.x, end.x);
+      const maxY = Math.max(prev.metadata.overallDepth, start.y, end.y);
+      return {
+        ...prev,
+        metadata: { ...prev.metadata, overallWidth: maxX, overallDepth: maxY },
+        walls: [...prev.walls, wall],
+      };
+    });
+  }, [commit]);
+
+  const handleAddOpening = useCallback(
+    (kind: "door" | "window", wallId: string, at: { x: number; y: number }) => {
+      commit((prev) => {
+        const wall = prev.walls.find((w) => w.id === wallId);
+        if (!wall) return prev;
+        const dx = wall.end.x - wall.start.x;
+        const dy = wall.end.y - wall.start.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 0.4) return prev;
+        const width = kind === "door" ? 0.9 : 1.2;
+        const t = ((at.x - wall.start.x) * dx + (at.y - wall.start.y) * dy) / len;
+        const nt = Math.max(width / 2 + 0.05, Math.min(len - width / 2 - 0.05, t));
+        if (nt <= width / 2 || nt >= len - width / 2) return prev;
+        const position = {
+          x: Math.round((wall.start.x + (dx / len) * nt) * 1000) / 1000,
+          y: Math.round((wall.start.y + (dy / len) * nt) * 1000) / 1000,
+        };
+        if (kind === "door") {
+          return {
+            ...prev,
+            doors: [
+              ...prev.doors,
+              {
+                id: uid("door"), position, width, height: Math.min(2.1, wall.height - 0.1),
+                wallId, style: "single", swingDirection: "inward", material: "wood", color: "#7a5c3e",
+              } as HouseAnalysis["doors"][number],
+            ],
+          };
+        }
+        return {
+          ...prev,
+          windows: [
+            ...prev.windows,
+            {
+              id: uid("window"), position, width, height: 1.4, sillHeight: 0.9,
+              wallId, style: "double-hung", panes: 2, material: "vinyl", color: "#FFFFFF",
+            } as HouseAnalysis["windows"][number],
+          ],
+        };
+      });
+    },
+    [commit]
+  );
+
+  /** Drag-move a wall (openings ride along). Caller checkpoints history at drag start. */
+  const handleMoveWall = useCallback((id: string, dx: number, dy: number) => {
+    const current = analysisRef.current;
+    if (!current || (dx === 0 && dy === 0)) return;
+    setAnalysis({
+      ...current,
+      walls: current.walls.map((w) =>
+        w.id === id
+          ? { ...w, start: { x: w.start.x + dx, y: w.start.y + dy }, end: { x: w.end.x + dx, y: w.end.y + dy } }
+          : w
+      ),
+      doors: current.doors.map((d) =>
+        d.wallId === id ? { ...d, position: { x: d.position.x + dx, y: d.position.y + dy } } : d
+      ),
+      windows: current.windows.map((w) =>
+        w.wallId === id ? { ...w, position: { x: w.position.x + dx, y: w.position.y + dy } } : w
+      ),
+    });
     setEdited(true);
   }, []);
 
   const handleSetAllWallHeight = useCallback((h: number) => {
     const height = Number.isFinite(h) ? Math.max(2.0, Math.min(4.5, h)) : 2.7;
-    setAnalysis((prev) =>
-      prev
-        ? {
-            ...prev,
-            metadata: { ...prev.metadata, wallHeight: height },
-            walls: prev.walls.map((w) => ({ ...w, height })),
-          }
-        : prev
-    );
-    setEdited(true);
-  }, []);
+    commit((prev) => ({
+      ...prev,
+      metadata: { ...prev.metadata, wallHeight: height },
+      walls: prev.walls.map((w) => ({ ...w, height })),
+    }));
+  }, [commit]);
 
   const handleNudgeElement = useCallback((kind: "door" | "window", id: string, dir: 1 | -1) => {
-    setAnalysis((prev) => {
-      if (!prev) return prev;
+    commit((prev) => {
       const list = kind === "door" ? prev.doors : prev.windows;
       const element = list.find((e) => e.id === id);
       const wall = prev.walls.find((w) => w.id === element?.wallId);
@@ -459,8 +688,18 @@ export default function Home(): React.JSX.Element {
       }
       return { ...prev, windows: prev.windows.map((w) => (w.id === id ? { ...w, position } : w)) };
     });
+  }, [commit]);
+
+  const handleImportProject = useCallback((data: { analysis: HouseAnalysis; open: OpenState; source: AnalysisSource }) => {
+    resetForNewAnalysis();
+    setAnalysis(data.analysis);
+    setOpenMap(data.open ?? {});
+    setSource(data.source);
+    setModel("project file");
     setEdited(true);
-  }, []);
+    setDisplayImage(null);
+    setRestoredNote(null);
+  }, [resetForNewAnalysis]);
 
   const handleToggleOpen = useCallback((kind: "door" | "window", id: string) => {
     if (!analysis) return;
@@ -481,6 +720,7 @@ export default function Home(): React.JSX.Element {
 
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: "plan", label: "Plan" },
+    { id: "build", label: "Build" },
     { id: "ask", label: "Ask Muse" },
     { id: "look", label: "Look" },
     { id: "verify", label: "Verify" },
@@ -501,7 +741,7 @@ export default function Home(): React.JSX.Element {
           </span>
           {analysis && (
             <span className="rounded-full border border-[var(--border)] px-3 py-1">
-              Model: {source === "live" ? <span className="text-[var(--success)]">live</span> : <span className="text-[var(--warning)]">sample</span>} · {model}
+              Model: {source === "live" ? <span className="text-[var(--success)]">live</span> : source === "file" ? <span className="text-[var(--success)]">project file</span> : <span className="text-[var(--warning)]">sample</span>} · {model}
               {edited && <span className="text-[var(--muted)]"> · edited in 3D</span>}
             </span>
           )}
@@ -516,6 +756,35 @@ export default function Home(): React.JSX.Element {
       <div className="grid flex-1 gap-4 p-4 lg:grid-cols-[400px_minmax(0,1fr)]">
         <aside className="space-y-4">
           <UploadCard onFile={handleFile} onSample={handleSample} busy={busy !== null} deep={deep} setDeep={setDeep} />
+          {restoredNote && (
+            <div className="panel border-l-4 border-l-[var(--accent)] p-3 text-xs">
+              <p className="text-[var(--muted)]">{restoredNote}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  clearAutosave();
+                  setRestoredNote(null);
+                  setAnalysis(null);
+                  setDisplayImage(null);
+                  pastRef.current = [];
+                  futureRef.current = [];
+                  setHistTick((t) => t + 1);
+                }}
+                className="btn-ghost mt-2 px-2.5 py-1"
+              >
+                Start fresh instead
+              </button>
+            </div>
+          )}
+          <div className="panel p-4">
+            <h2 className="mb-2 text-sm font-semibold">Your flow</h2>
+            <ol className="space-y-1.5 text-xs">
+              <FlowStep done={analysis !== null} n={1} label="Analyze — upload a plan or load a sample" />
+              <FlowStep done={walkVisited} n={2} label="Walk — tour the house in first person" />
+              <FlowStep done={edited} n={3} label="Remodel — move, add or restyle anything" />
+              <FlowStep done={matches.length > 0} n={4} label="Verify & export — SAM check, then GLB/DXF/CSV" />
+            </ol>
+          </div>
           {error && (
             <div className="panel border-l-4 border-l-[var(--danger)] p-3 text-xs">
               <p className="font-semibold">Something went wrong</p>
@@ -540,6 +809,18 @@ export default function Home(): React.JSX.Element {
                 ))}
               </div>
               {tab === "plan" && <PlanTab analysis={analysis} source={source} model={model} />}
+              {tab === "build" && (
+                <BuildTab
+                  analysis={analysis}
+                  tool={editTool}
+                  setTool={setEditTool}
+                  canUndo={canUndo}
+                  canRedo={canRedo}
+                  onUndo={undo}
+                  onRedo={redo}
+                  onDelete={handleDeleteElement}
+                />
+              )}
               {tab === "ask" && <AskTab messages={qa} busy={qaBusy} onAsk={handleAsk} />}
               {tab === "look" && (
                 <LookTab
@@ -555,12 +836,14 @@ export default function Home(): React.JSX.Element {
                   setAutoRotate={setAutoRotate}
                   showRoof={showRoof}
                   setShowRoof={setShowRoof}
-                  showFurniture={showFurniture}
-                  setShowFurniture={setShowFurniture}
                   showLabels={showLabels}
                   setShowLabels={setShowLabels}
                   showDimensions={showDimensions}
                   setShowDimensions={setShowDimensions}
+                  sunHour={sunHour}
+                  setSunHour={setSunHour}
+                  showScaleFigure={showScaleFigure}
+                  setShowScaleFigure={setShowScaleFigure}
                 />
               )}
               {tab === "verify" && sparkCounts && (
@@ -575,7 +858,14 @@ export default function Home(): React.JSX.Element {
                 />
               )}
               {tab === "export" && (
-                <ExportTab onGLB={handleExportGLB} onDXF={handleExportDXF} onCSV={handleExportCSV} busy={exportBusy} />
+                <ExportTab
+                  onGLB={handleExportGLB}
+                  onDXF={handleExportDXF}
+                  onCSV={handleExportCSV}
+                  busy={exportBusy}
+                  project={{ analysis, open: openMap, source }}
+                  onImportProject={handleImportProject}
+                />
               )}
             </div>
           ) : (
@@ -583,22 +873,21 @@ export default function Home(): React.JSX.Element {
               <p className="font-semibold text-[var(--text)]">How it works</p>
               <ol className="mt-1 list-decimal space-y-1 pl-5">
                 <li>Upload a plan for live extraction, or load a sample.</li>
-                <li>Muse Spark 1.3 reads walls, doors, windows, rooms and furniture into strict JSON.</li>
+                <li>Muse Spark 1.3 reads walls, doors, windows and rooms into strict JSON.</li>
                 <li>Three.js rebuilds it as an interactive 3D model in your browser.</li>
-                <li>Verify symbols with SAM 3.1, restyle with Muse Image, export GLB/DXF/CSV.</li>
+                <li>Remodel in the Build tab, verify with SAM 3.1, export GLB/DXF/CSV.</li>
               </ol>
             </div>
           )}
         </aside>
 
         <main className="flex min-w-0 flex-col gap-4">
-          <div className="relative h-[440px] overflow-hidden rounded-xl border border-[var(--border)] bg-[#0c0e14] lg:h-[520px]">
+          <div id="orbit-view" className="relative h-[440px] overflow-hidden rounded-xl border border-[var(--border)] bg-[#0c0e14] lg:h-[520px]">
             {analysis ? (
               <Viewer3D
                 analysis={analysis}
                 textures={textures}
                 showRoof={showRoof}
-                showFurniture={showFurniture}
                 showLabels={showLabels}
                 showDimensions={showDimensions}
                 lighting={lighting}
@@ -606,6 +895,13 @@ export default function Home(): React.JSX.Element {
                 open={openMap}
                 onToggleOpen={handleToggleOpen}
                 autoRotate={autoRotate}
+                editTool={editTool}
+                onAddWall={handleAddWall}
+                onAddOpening={handleAddOpening}
+                onMoveWall={handleMoveWall}
+                onCheckpoint={checkpoint}
+                sunHour={sunHour}
+                showScaleFigure={showScaleFigure}
               />
             ) : (
               <div className="flex h-full items-center justify-center p-8 text-center">
@@ -620,7 +916,7 @@ export default function Home(): React.JSX.Element {
             )}
             {analysis && (
               <div className="absolute right-3 top-3 z-10 flex gap-2">
-                <button type="button" onClick={() => setWalkOpen(true)} className="rounded-lg bg-black/65 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black/85">
+                <button type="button" onClick={() => { setWalkOpen(true); setWalkVisited(true); }} className="rounded-lg bg-black/65 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black/85">
                   Walk inside
                 </button>
                 <button type="button" onClick={() => setArOpen(true)} className="rounded-lg bg-black/65 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black/85">
@@ -645,11 +941,10 @@ export default function Home(): React.JSX.Element {
         <WalkMode
           analysis={analysis}
           textures={textures}
-          showFurniture={showFurniture}
           open={openMap}
           onToggleOpen={handleToggleOpen}
           onPatch={handlePatch}
-          onDeleteFurniture={handleDeleteFurniture}
+          onDelete={handleDeleteElement}
           onSetAllWallHeight={handleSetAllWallHeight}
           onNudge={handleNudgeElement}
           onClose={() => setWalkOpen(false)}
@@ -660,7 +955,6 @@ export default function Home(): React.JSX.Element {
         <VRWalk
           analysis={analysis}
           textures={textures}
-          showFurniture={showFurniture}
           open={openMap}
           onToggleOpen={handleToggleOpen}
           onPatch={handlePatch}

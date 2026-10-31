@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { Grid, Html, OrbitControls } from "@react-three/drei";
+import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
-import type { GeneratedTextures, HouseAnalysis } from "@/types";
+import type { EditTool, GeneratedTextures, HouseAnalysis } from "@/types";
 import { buildHouseGroup, disposeGroup, findTag, type ElementTag, type OpenState } from "@/lib/geometry";
 import InteractiveAnimator from "./InteractiveAnimator";
 
@@ -15,7 +15,6 @@ interface ViewerProps {
   analysis: HouseAnalysis;
   textures: GeneratedTextures;
   showRoof: boolean;
-  showFurniture: boolean;
   showLabels: boolean;
   showDimensions: boolean;
   lighting: LightingMode;
@@ -23,6 +22,13 @@ interface ViewerProps {
   open: OpenState;
   onToggleOpen: (kind: "door" | "window", id: string) => void;
   autoRotate: boolean;
+  editTool: EditTool;
+  onAddWall: (start: { x: number; y: number }, end: { x: number; y: number }) => void;
+  onAddOpening: (kind: "door" | "window", wallId: string, at: { x: number; y: number }) => void;
+  onMoveWall: (id: string, dx: number, dy: number) => void;
+  onCheckpoint: () => void;
+  sunHour: number | null;
+  showScaleFigure: boolean;
 }
 
 interface RigProps {
@@ -198,7 +204,7 @@ const LIGHTS: Record<LightingMode, { bg: string; sun: string; intensity: number;
 };
 
 export default function Viewer3D(props: ViewerProps): React.JSX.Element {
-  const { analysis, textures, showRoof, showFurniture, showLabels, showDimensions, lighting, cameraPreset, open, onToggleOpen, autoRotate } = props;
+  const { analysis, textures, showRoof, showLabels, showDimensions, lighting, cameraPreset, open, onToggleOpen, autoRotate, editTool, onAddWall, onAddOpening, onMoveWall, onCheckpoint, sunHour, showScaleFigure } = props;
   const { overallWidth: w, overallDepth: d, wallHeight: h } = analysis.metadata;
   const light = LIGHTS[lighting];
 
@@ -239,13 +245,12 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
     () =>
       buildHouseGroup(analysis, {
         showRoof,
-        showFurniture,
         facadeMap: maps.facade ?? null,
         floorMap: maps.floor ?? null,
         roofMap: maps.roof ?? null,
         open,
       }),
-    [analysis, showRoof, showFurniture, maps, open]
+    [analysis, showRoof, maps, open]
   );
 
   useEffect(() => () => disposeGroup(group), [group]);
@@ -282,6 +287,77 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
 
   const flight = useRef({ active: false });
 
+  // ---- editor state (add / move / measure tools) ----
+  const toPlan = useCallback(
+    (wx: number, wz: number): { x: number; y: number } => ({ x: wx + w / 2, y: wz + d / 2 }),
+    [w, d]
+  );
+  const snapQ = (v: number): number => Math.round(v * 4) / 4;
+  const [pendingStart, setPendingStart] = useState<{ x: number; y: number } | null>(null);
+  const [hoverPlan, setHoverPlan] = useState<{ x: number; y: number } | null>(null);
+  const hoverRef = useRef<{ x: number; y: number } | null>(null);
+  const [measurePts, setMeasurePts] = useState<Array<{ x: number; z: number }>>([]);
+  const dragRef = useRef<{ id: string; bx: number; bz: number; ldx: number; ldy: number } | null>(null);
+
+  // Reset transient tool state when the tool or model changes.
+  useEffect(() => {
+    setPendingStart(null);
+    setHoverPlan(null);
+    setMeasurePts([]);
+    dragRef.current = null;
+  }, [editTool, analysis]);
+
+  useEffect(() => {
+    const onUp = (): void => {
+      dragRef.current = null;
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.code === "Escape") {
+        setPendingStart(null);
+        setMeasurePts([]);
+        dragRef.current = null;
+      }
+    };
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  /** Wall endpoint with 15° angle snapping for straight, clean walls. */
+  const snapWallEnd = useCallback((a: { x: number; y: number }, b: { x: number; y: number }): { x: number; y: number } => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 0.01) return { x: snapQ(b.x), y: snapQ(b.y) };
+    const step = Math.PI / 12;
+    const ang = Math.round(Math.atan2(dy, dx) / step) * step;
+    return { x: snapQ(a.x + Math.cos(ang) * len), y: snapQ(a.y + Math.sin(ang) * len) };
+  }, []);
+
+  const floorTool = editTool === "add-wall" || editTool === "move" || editTool === "measure";
+
+  const rubberEnd = pendingStart && hoverPlan ? snapWallEnd(pendingStart, hoverPlan) : null;
+
+  // ---- sun: explicit hour overrides the lighting preset ----
+  const sun = useMemo(() => {
+    if (sunHour === null) return null;
+    const h = Math.max(6, Math.min(20, sunHour));
+    const a = ((h - 6) / 14) * Math.PI; // 6h east horizon → 20h west horizon
+    const heat = Math.max(0, Math.sin(a));
+    const dist = Math.max(w, d) * 2.2 + 12;
+    return {
+      position: [Math.cos(a) * dist, 3 + heat * dist * 0.85, dist * 0.4] as [number, number, number],
+      color: heat > 0.55 ? "#ffffff" : "#ff9a4d",
+      intensity: 1.1 + heat * 1.4,
+    };
+  }, [sunHour, w, d]);
+  const effBg = sun ? "#0d1220" : light.bg;
+  const effAmbient = sun ? 0.7 : light.ambient;
+
+
   const labels = useMemo(
     () =>
       analysis.rooms.map((r) => {
@@ -296,19 +372,23 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
   const sunY = Math.tan((light.elevation * Math.PI) / 180) * sunDistance;
 
   return (
-    <div className="relative h-full w-full">
+    <div
+      className="relative h-full w-full"
+      style={{ cursor: editTool === "move" ? "grab" : editTool === "select" ? "default" : "crosshair" }}
+    >
     <Canvas
       shadows
       dpr={[1, 2]}
       camera={{ fov: 45, near: 0.1, far: 600, position: [12, 10, 12] }}
+      gl={{ preserveDrawingBuffer: true, antialias: true }}
     >
-      <color attach="background" args={[light.bg]} />
-      <fog attach="fog" args={[light.bg, 70, 240]} />
-      <ambientLight intensity={light.ambient} />
+      <color attach="background" args={[effBg]} />
+      <fog attach="fog" args={[effBg, 70, 240]} />
+      <ambientLight intensity={effAmbient} />
       <directionalLight
-        position={[sunDistance * 0.7, sunY, sunDistance * 0.5]}
-        intensity={light.intensity}
-        color={light.sun}
+        position={sun ? sun.position : [sunDistance * 0.7, sunY, sunDistance * 0.5]}
+        intensity={sun ? sun.intensity : light.intensity}
+        color={sun ? sun.color : light.sun}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-camera-left={-w}
@@ -320,13 +400,133 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
       <primitive
         object={group}
         onClick={(e: ThreeEvent<MouseEvent>) => {
-          // Ignore orbit drags (delta = px moved); toggle doors/windows on genuine clicks.
           e.stopPropagation();
           if (e.delta > 6) return;
           const tag: ElementTag | null = findTag(e.object);
+          if ((editTool === "add-door" || editTool === "add-window") && tag?.kind === "wall") {
+            onAddOpening(editTool === "add-door" ? "door" : "window", tag.id, toPlan(e.point.x, e.point.z));
+            return;
+          }
+          if (editTool !== "select") return;
           if (tag && (tag.kind === "door" || tag.kind === "window")) onToggleOpen(tag.kind, tag.id);
         }}
+        onPointerDown={(e: ThreeEvent<PointerEvent>) => {
+          if (editTool !== "move" || e.button !== 0) return;
+          const tag: ElementTag | null = findTag(e.object);
+          if (tag?.kind !== "wall") return;
+          e.stopPropagation();
+          (e.target as unknown as Element).setPointerCapture?.(e.pointerId);
+          onCheckpoint();
+          dragRef.current = { id: tag.id, bx: e.point.x, bz: e.point.z, ldx: 0, ldy: 0 };
+        }}
       />
+      {/* Invisible floor click-plane for add / move / measure tools. */}
+      {floorTool && (
+        <mesh
+          rotation-x={-Math.PI / 2}
+          position={[0, 0.02, 0]}
+          onClick={(e: ThreeEvent<MouseEvent>) => {
+            e.stopPropagation();
+            if (e.delta > 6) return;
+            const p = toPlan(e.point.x, e.point.z);
+            const snapped = { x: snapQ(p.x), y: snapQ(p.y) };
+            if (editTool === "add-wall") {
+              if (!pendingStart) setPendingStart(snapped);
+              else {
+                onAddWall(pendingStart, snapWallEnd(pendingStart, snapped));
+                setPendingStart(null);
+              }
+            } else if (editTool === "measure") {
+              const wpt = { x: e.point.x, z: e.point.z };
+              setMeasurePts((prev) => (prev.length >= 2 ? [wpt] : [...prev, wpt]));
+            }
+          }}
+          onPointerMove={(e: ThreeEvent<PointerEvent>) => {
+            const p = toPlan(e.point.x, e.point.z);
+            const snapped = { x: snapQ(p.x), y: snapQ(p.y) };
+            hoverRef.current = snapped;
+            setHoverPlan(snapped);
+            const drag = dragRef.current;
+            if (drag && editTool === "move") {
+              const dx = e.point.x - drag.bx;
+              const dz = e.point.z - drag.bz;
+              onMoveWall(drag.id, dx - drag.ldx, dz - drag.ldy);
+              drag.ldx = dx;
+              drag.ldy = dz;
+            }
+          }}
+          onContextMenu={(e) => {
+            e.nativeEvent.preventDefault();
+            setPendingStart(null);
+            setMeasurePts([]);
+            dragRef.current = null;
+          }}
+        >
+          <planeGeometry args={[140, 140]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
+        </mesh>
+      )}
+      {/* Wall rubber band + start marker. */}
+      {editTool === "add-wall" && pendingStart && rubberEnd && (
+        <>
+          <Line
+            points={[
+              [pendingStart.x - w / 2, 0.1, pendingStart.y - d / 2],
+              [rubberEnd.x - w / 2, 0.1, rubberEnd.y - d / 2],
+            ]}
+            color="#4f7cff"
+            lineWidth={3}
+          />
+          <mesh position={[pendingStart.x - w / 2, 0.1, pendingStart.y - d / 2]}>
+            <sphereGeometry args={[0.12, 12, 10]} />
+            <meshBasicMaterial color="#4f7cff" />
+          </mesh>
+          <Html position={[rubberEnd.x - w / 2, 0.5, rubberEnd.y - d / 2]} center distanceFactor={22} style={{ pointerEvents: "none" }}>
+            <div style={dimStyle}>
+              {Math.hypot(rubberEnd.x - pendingStart.x, rubberEnd.y - pendingStart.y).toFixed(2)} m
+            </div>
+          </Html>
+        </>
+      )}
+      {/* Tape measure. */}
+      {editTool === "measure" && measurePts.length > 0 && (
+        <>
+          {measurePts.map((p, i) => (
+            <mesh key={i} position={[p.x, 0.1, p.z]}>
+              <sphereGeometry args={[0.1, 12, 10]} />
+              <meshBasicMaterial color="#fbbf24" />
+            </mesh>
+          ))}
+          {measurePts.length === 2 && (
+            <>
+              <Line points={[[measurePts[0].x, 0.1, measurePts[0].z], [measurePts[1].x, 0.1, measurePts[1].z]]} color="#fbbf24" lineWidth={3} />
+              <Html
+                position={[(measurePts[0].x + measurePts[1].x) / 2, 0.6, (measurePts[0].z + measurePts[1].z) / 2]}
+                center
+                distanceFactor={22}
+                style={{ pointerEvents: "none" }}
+              >
+                <div style={dimStyle}>
+                  {Math.hypot(measurePts[1].x - measurePts[0].x, measurePts[1].z - measurePts[0].z).toFixed(2)} m
+                </div>
+              </Html>
+            </>
+          )}
+        </>
+      )}
+      {/* 1.8 m scale figure for size reference. */}
+      {showScaleFigure && (
+        <group position={[w / 2 + 2.2, 0, d / 2 + 2.2]}>
+          <mesh position={[0, 0.95, 0]} castShadow>
+            <capsuleGeometry args={[0.16, 1.1, 6, 12]} />
+            <meshStandardMaterial color="#7c8db0" roughness={0.8} />
+          </mesh>
+          <mesh position={[0, 1.68, 0]} castShadow>
+            <sphereGeometry args={[0.14, 14, 12]} />
+            <meshStandardMaterial color="#a9b8d8" roughness={0.8} />
+          </mesh>
+        </group>
+      )}
       <InteractiveAnimator group={group} open={open} />
       <EnvironmentDressing w={w} d={d} night={lighting === "night"} />
       {lighting === "night" &&
@@ -375,8 +575,9 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
       <CameraRig preset={cameraPreset} w={w} d={d} h={h} analysisId={analysis.id} flight={flight} />
       <OrbitControls
         makeDefault
+        enabled={editTool !== "move"}
         maxPolarAngle={Math.PI * 0.495}
-        autoRotate={autoRotate}
+        autoRotate={autoRotate && editTool === "select"}
         autoRotateSpeed={0.9}
         onStart={() => {
           flight.current.active = false;
@@ -384,7 +585,11 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
       />
     </Canvas>
       <div className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-black/55 px-2.5 py-1 text-[11px] text-white/75">
-        Click a door or window to open it · drag to orbit · scroll to zoom
+        {editTool === "select" && "Click a door or window to open it · drag to orbit · scroll to zoom"}
+        {editTool === "move" && "Drag a wall to move it (openings ride along) · right-click cancels"}
+        {editTool === "add-wall" && (pendingStart ? "Click the end point · right-click cancels" : "Click the floor to start a wall")}
+        {(editTool === "add-door" || editTool === "add-window") && "Click a wall where the opening should go"}
+        {editTool === "measure" && (measurePts.length === 1 ? "Click the second point" : "Click two points to measure")}
       </div>
     </div>
   );
