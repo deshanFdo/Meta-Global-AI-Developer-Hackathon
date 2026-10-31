@@ -8,6 +8,7 @@ import type { EditTool, GeneratedTextures, HouseAnalysis } from "@/types";
 import { buildHouseGroup, disposeGroup, findTag, type ElementTag, type OpenState } from "@/lib/geometry";
 import { buildFurniture, nominalSize, type CatalogEntry } from "@/lib/furnish";
 import InteractiveAnimator from "./InteractiveAnimator";
+import SelectionHighlight from "./SelectionHighlight";
 
 export type LightingMode = "day" | "golden" | "night";
 export type CameraPreset = "orbit" | "top" | "front";
@@ -34,6 +35,8 @@ interface ViewerProps {
   pendingFurniture: CatalogEntry | null;
   sunHour: number | null;
   showScaleFigure: boolean;
+  selection: ElementTag | null;
+  onSelect: (tag: ElementTag | null) => void;
 }
 
 interface RigProps {
@@ -209,7 +212,7 @@ const LIGHTS: Record<LightingMode, { bg: string; sun: string; intensity: number;
 };
 
 export default function Viewer3D(props: ViewerProps): React.JSX.Element {
-  const { analysis, textures, showRoof, showLabels, showDimensions, lighting, cameraPreset, open, onToggleOpen, autoRotate, editTool, onAddWall, onAddOpening, onMoveWall, onMoveFurniture, onCheckpoint, onAddFurniture, onCancelTool, pendingFurniture, sunHour, showScaleFigure } = props;
+  const { analysis, textures, showRoof, showLabels, showDimensions, lighting, cameraPreset, open, onToggleOpen, autoRotate, editTool, onAddWall, onAddOpening, onMoveWall, onMoveFurniture, onCheckpoint, onAddFurniture, onCancelTool, pendingFurniture, sunHour, showScaleFigure, selection, onSelect } = props;
   const { overallWidth: w, overallDepth: d, wallHeight: h } = analysis.metadata;
   const light = LIGHTS[lighting];
 
@@ -453,6 +456,13 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
             return;
           }
           if (editTool !== "select") return;
+          // Single click selects anything; doors/windows open on double-click.
+          onSelect(tag);
+        }}
+        onDoubleClick={(e: ThreeEvent<MouseEvent>) => {
+          e.stopPropagation();
+          if (editTool !== "select") return;
+          const tag: ElementTag | null = findTag(e.object);
           if (tag && (tag.kind === "door" || tag.kind === "window")) onToggleOpen(tag.kind, tag.id);
         }}
         onPointerDown={(e: ThreeEvent<PointerEvent>) => {
@@ -598,6 +608,7 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
         </group>
       )}
       <InteractiveAnimator group={group} open={open} />
+      <SelectionHighlight group={group} selection={editTool === "select" ? selection : null} />
       <EnvironmentDressing w={w} d={d} night={lighting === "night"} />
       {lighting === "night" &&
         lampPositions.map((l) => (
@@ -655,7 +666,7 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
       />
     </Canvas>
       <div className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-black/55 px-2.5 py-1 text-[11px] text-white/75">
-        {editTool === "select" && "Click a door or window to open it · drag to orbit · scroll to zoom"}
+        {editTool === "select" && "Click to select · double-click doors/windows to open · Del deletes · drag to orbit"}
         {editTool === "move" && "Drag a wall or furniture to move it · right-click cancels"}
         {editTool === "add-wall" && (pendingStart ? "Click the end point · right-click cancels" : "Click the floor to start a wall")}
         {(editTool === "add-door" || editTool === "add-window") && "Click a wall where the opening should go"}

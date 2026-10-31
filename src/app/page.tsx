@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic";
 import * as THREE from "three";
 import type { AnalysisSource, GeneratedTextures, HouseAnalysis, SamMatch, EditTool } from "@/types";
-import { buildHouseGroup, disposeGroup, isOpenable, openKey, type OpenState } from "@/lib/geometry";
+import { buildHouseGroup, disposeGroup, isOpenable, openKey, type ElementTag, type OpenState } from "@/lib/geometry";
 import { doorSound } from "@/lib/sound";
 import { downloadText, exportGroupToGLB, houseToCSV, houseToDXF } from "@/lib/exporters";
 import { clearAutosave, loadAutosave, saveAutosave } from "@/lib/project-store";
@@ -12,8 +12,7 @@ import { VARIANT_OPTIONS, type CatalogEntry } from "@/lib/furnish";
 import UploadCard, { type ArchetypeKind } from "@/components/UploadCard";
 import PlanCompare from "@/components/PlanCompare";
 import { AskTab, BuildTab, ExportTab, LookTab, PlanTab, VerifyTab, type QaMessage, type SparkCounts } from "@/components/panels";
-import { DOOR_MATS, DOOR_STYLES, ROOF_MATS, ROOF_TYPES, WALL_MATS, WIN_MATS, WIN_STYLES } from "@/components/CustomizePanel";
-import type { ElementTag } from "@/lib/geometry";
+import CustomizePanel, { DOOR_MATS, DOOR_STYLES, ROOF_MATS, ROOF_TYPES, WALL_MATS, WIN_MATS, WIN_STYLES } from "@/components/CustomizePanel";
 import type { CameraPreset, LightingMode } from "@/components/Viewer3D";
 
 const Viewer3D = dynamic(() => import("@/components/Viewer3D"), {
@@ -178,10 +177,14 @@ export default function Home(): React.JSX.Element {
   const [walkVisited, setWalkVisited] = useState(false);
   const [restoredNote, setRestoredNote] = useState<string | null>(null);
   const [pendingFurniture, setPendingFurniture] = useState<CatalogEntry | null>(null);
+  const [selection, setSelection] = useState<ElementTag | null>(null);
 
   // Undo/redo across every model mutation (refs + tick to stay StrictMode-safe).
   const analysisRef = useRef<HouseAnalysis | null>(null);
   analysisRef.current = analysis;
+  const selectionRef = useRef<ElementTag | null>(null);
+  selectionRef.current = selection;
+  const handleDeleteElementRef = useRef<(kind: "wall" | "door" | "window" | "furniture", id: string) => void>(() => undefined);
   const pastRef = useRef<HouseAnalysis[]>([]);
   const futureRef = useRef<HouseAnalysis[]>([]);
   const [histTick, setHistTick] = useState(0);
@@ -262,12 +265,18 @@ export default function Home(): React.JSX.Element {
     setMatches([]);
     setEdited(false);
     setOpenMap({});
+    setSelection(null);
     pastRef.current = [];
     futureRef.current = [];
     setHistTick((t) => t + 1);
     setEditTool("select");
     setTab("plan");
   }, []);
+
+  // Clear orbit selection whenever the tool changes away from select.
+  useEffect(() => {
+    if (editTool !== "select") setSelection(null);
+  }, [editTool]);
 
   // Global undo/redo (ignored while typing or walking).
   useEffect(() => {
@@ -282,6 +291,17 @@ export default function Home(): React.JSX.Element {
       } else if ((mod && e.code === "KeyY") || (mod && e.shiftKey && e.code === "KeyZ")) {
         e.preventDefault();
         redo();
+      } else if ((e.code === "Delete" || e.code === "Backspace") && selectionRef.current) {
+        const sel = selectionRef.current;
+        if (sel.kind !== "roof") {
+          e.preventDefault();
+          handleDeleteElementRef.current(sel.kind, sel.id);
+          setSelection(null);
+        }
+      } else if (e.code === "Escape") {
+        setSelection(null);
+        setEditTool("select");
+        setPendingFurniture(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -623,6 +643,7 @@ export default function Home(): React.JSX.Element {
       };
     });
   }, [commit]);
+  handleDeleteElementRef.current = handleDeleteElement;
 
   const handleAddWall = useCallback((start: { x: number; y: number }, end: { x: number; y: number }) => {
     commit((prev) => {
@@ -897,6 +918,33 @@ export default function Home(): React.JSX.Element {
               </button>
             </div>
           )}
+          {analysis && selection && editTool === "select" && (
+            <div className="panel p-4">
+              <CustomizePanel
+                key={`${selection.kind}:${selection.id}`}
+                analysis={analysis}
+                selection={selection}
+                open={
+                  selection.kind === "door" || selection.kind === "window"
+                    ? openMap[`${selection.kind}:${selection.id}`] === true
+                    : undefined
+                }
+                onToggleOpen={() => {
+                  if (selection.kind === "door" || selection.kind === "window") {
+                    handleToggleOpen(selection.kind, selection.id);
+                  }
+                }}
+                onPatch={handlePatch}
+                onDelete={(kind, id) => {
+                  handleDeleteElement(kind, id);
+                  setSelection(null);
+                }}
+                onSetAllWallHeight={handleSetAllWallHeight}
+                onNudge={handleNudgeElement}
+                onClose={() => setSelection(null)}
+              />
+            </div>
+          )}
           {analysis ? (
             <div className="panel p-4">
               <div className="mb-3 flex flex-wrap gap-1.5">
@@ -1017,6 +1065,8 @@ export default function Home(): React.JSX.Element {
                 pendingFurniture={pendingFurniture}
                 sunHour={sunHour}
                 showScaleFigure={showScaleFigure}
+                selection={editTool === "select" ? selection : null}
+                onSelect={setSelection}
               />
             ) : (
               <div className="flex h-full items-center justify-center p-8 text-center">

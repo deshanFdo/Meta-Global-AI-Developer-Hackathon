@@ -11,6 +11,7 @@ import { useTextureMaps } from "@/lib/useTextureMaps";
 import { footstep, isMuted, landThud, setMuted } from "@/lib/sound";
 import CustomizePanel from "./CustomizePanel";
 import InteractiveAnimator from "./InteractiveAnimator";
+import SelectionHighlight from "./SelectionHighlight";
 
 interface WalkModeProps {
   analysis: HouseAnalysis;
@@ -31,47 +32,6 @@ const JUMP_VELOCITY = 4.8;
 
 /** Modal input states: WALK owns the mouse via pointer lock; MENU frees it for UI. */
 type InputMode = "walk" | "menu";
-
-/** Pulsing highlight on the selected element (skips glass, which is material-shared). */
-function SelectionPulse({ group, selection }: { group: THREE.Group; selection: ElementTag | null }): React.JSX.Element | null {
-  const mats = useRef<THREE.MeshStandardMaterial[]>([]);
-
-  useEffect(() => {
-    const found: THREE.MeshStandardMaterial[] = [];
-    if (selection) {
-      group.traverse((obj) => {
-        const mesh = obj as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        const tag = findTag(mesh);
-        if (tag && tag.kind === selection.kind && tag.id === selection.id) {
-          const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-          for (const m of list) {
-            const std = m as THREE.MeshStandardMaterial;
-            if (std.emissive && !std.transparent && !found.includes(std)) found.push(std);
-          }
-        }
-      });
-    }
-    mats.current = found;
-    return () => {
-      for (const m of found) {
-        m.emissive.setHex(0x000000);
-        m.emissiveIntensity = 1;
-      }
-    };
-  }, [group, selection]);
-
-  useFrame(({ clock }) => {
-    if (mats.current.length === 0) return;
-    const pulse = 0.35 + 0.25 * Math.sin(clock.elapsedTime * 5);
-    for (const m of mats.current) {
-      m.emissive.setHex(0x2a4bd7);
-      m.emissiveIntensity = pulse;
-    }
-  });
-
-  return null;
-}
 
 /** Slow-drifting dust motes for interior atmosphere. */
 function DustMotes({ w, d, h }: { w: number; d: number; h: number }): React.JSX.Element {
@@ -280,6 +240,10 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
   const [isTouch] = useState(() => typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true);
   const targetRef = useRef<ElementTag | null>(null);
   targetRef.current = target;
+  const selectionRef = useRef<ElementTag | null>(null);
+  selectionRef.current = selection;
+  const onDeleteRef = useRef(onDelete);
+  onDeleteRef.current = onDelete;
   const maps = useTextureMaps(textures);
 
   const spawn = useMemo(() => spawnPose(analysis), [analysis]);
@@ -379,7 +343,13 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
       if (e.code === "KeyQ") exit();
       else if (e.code === "KeyF") toggleFullscreen();
       else if (e.code === "KeyM") toggleMute();
-      else if (e.code === "KeyE" && mode === "walk") {
+      else if ((e.code === "Delete" || e.code === "Backspace") && selectionRef.current) {
+        const sel = selectionRef.current;
+        if (sel.kind !== "roof") {
+          onDeleteRef.current(sel.kind, sel.id);
+          setSelection(null);
+        }
+      } else if (e.code === "KeyE" && mode === "walk") {
         const t = targetRef.current;
         if (t && (t.kind === "door" || t.kind === "window")) onToggleOpen(t.kind, t.id);
       }
@@ -435,7 +405,7 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
           <InteractiveAnimator group={group} open={open} />
           <Walker analysis={analysis} active={mode === "walk"} open={open} />
           <TargetScanner group={group} active={mode === "walk"} onTarget={setTarget} />
-          <SelectionPulse group={group} selection={selection} />
+          <SelectionHighlight group={group} selection={selection} />
           <DustMotes w={analysis.metadata.overallWidth} d={analysis.metadata.overallDepth} h={analysis.metadata.wallHeight} />
           <PointerLockControls
             ref={lockRef as never}
