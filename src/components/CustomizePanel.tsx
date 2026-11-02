@@ -12,9 +12,14 @@ interface Props {
   /** Current open state for the selected door/window (undefined for walls/roof). */
   open?: boolean;
   onToggleOpen?: () => void;
+  /** Lamp state for the selected room/lamp. */
+  lampOn?: boolean;
+  onToggleLamp?: () => void;
   onPatch: (kind: ElementTag["kind"], id: string, patch: Record<string, unknown>) => void;
-  /** Delete a wall (cascades its doors/windows), door, window or furniture item. */
-  onDelete: (kind: "wall" | "door" | "window" | "furniture", id: string) => void;
+  /** Delete a wall (cascades its doors/windows), door, window, furniture item or room label. */
+  onDelete: (kind: "wall" | "door" | "window" | "furniture" | "room", id: string) => void;
+  /** Duplicate a wall, opening or furniture item with a small offset. */
+  onDuplicate: (kind: "wall" | "door" | "window" | "furniture", id: string) => void;
   /** Set every wall (and the default ceiling height) to h meters. */
   onSetAllWallHeight: (h: number) => void;
   /** Shift a door/window along its wall by dir * 0.1 m. */
@@ -48,7 +53,7 @@ function num(value: string, fallback: number, min: number, max: number): number 
   return Math.max(min, Math.min(max, parsed));
 }
 
-export default function CustomizePanel({ analysis, selection, open, onToggleOpen, onPatch, onDelete, onSetAllWallHeight, onNudge, onClose, onResume }: Props): React.JSX.Element {
+export default function CustomizePanel({ analysis, selection, open, onToggleOpen, lampOn, onToggleLamp, onPatch, onDelete, onDuplicate, onSetAllWallHeight, onNudge, onClose, onResume }: Props): React.JSX.Element {
   const door: Door | undefined =
     selection.kind === "door" ? analysis.doors.find((d) => d.id === selection.id) : undefined;
   const win: PlanWindow | undefined =
@@ -58,12 +63,15 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
   const furn: FurnitureItem | undefined =
     selection.kind === "furniture" ? (analysis.furniture ?? []).find((f) => f.id === selection.id) : undefined;
   const roof = selection.kind === "roof" ? analysis.roof : undefined;
+  const room = selection.kind === "room" || selection.kind === "lamp"
+    ? analysis.rooms.find((r) => r.id === selection.id)
+    : undefined;
 
   const [recLoading, setRecLoading] = useState(false);
   const [recError, setRecError] = useState<string | null>(null);
   const [rec, setRec] = useState<{ patch: Record<string, string | number>; reason: string; model: string } | null>(null);
 
-  if (!door && !win && !wall && !furn && !roof) {
+  if (!door && !win && !wall && !furn && !roof && !room) {
     return (
       <div className="text-xs text-[var(--muted)]">
         <p>This element is no longer in the model.</p>
@@ -81,9 +89,13 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
         ? `Window ${win.id} · ${win.width.toFixed(2)} × ${win.height.toFixed(2)} m`
         : wall !== undefined
           ? `Wall ${wall.id} · ${wall.isExterior ? "exterior" : "interior"}`
-          : roof !== undefined
-            ? `Roof · ${roof.type} · ${roof.pitch.toFixed(0)}° pitch`
-            : `Furniture ${furn?.id} · ${furn?.type.replace(/_/g, " ")}`;
+          : furn !== undefined
+            ? `Furniture ${furn.id} · ${furn.type.replace(/_/g, " ")}`
+            : roof !== undefined
+              ? `Roof · ${roof.type} · ${roof.pitch.toFixed(0)}° pitch`
+              : selection.kind === "lamp"
+                ? `Lamp · ${room?.name ?? room?.id ?? ""}`
+                : `Room ${room?.name ?? ""} · ${room?.area.toFixed(1) ?? ""} m²`;
 
   const runRecommend = async (): Promise<void> => {
     if (door === undefined && win === undefined) return;
@@ -164,6 +176,9 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
           <button type="button" onClick={() => { onDelete("door", door.id); onClose(); }} className="btn-ghost w-full px-3 py-1.5 text-[11px] text-red-300">
             Delete this door
           </button>
+          <button type="button" onClick={() => onDuplicate("door", door.id)} className="btn-ghost w-full px-3 py-1.5 text-[11px]">
+            Duplicate this door
+          </button>
         </div>
       )}
 
@@ -222,6 +237,9 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
           <button type="button" onClick={() => { onDelete("window", win.id); onClose(); }} className="btn-ghost w-full px-3 py-1.5 text-[11px] text-red-300">
             Delete this window
           </button>
+          <button type="button" onClick={() => onDuplicate("window", win.id)} className="btn-ghost w-full px-3 py-1.5 text-[11px]">
+            Duplicate this window
+          </button>
         </div>
       )}
 
@@ -272,6 +290,9 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
           </div>
           <button type="button" onClick={() => { onDelete("wall", wall.id); onClose(); }} className="btn-ghost w-full px-3 py-1.5 text-[11px] text-red-300">
             Delete this segment (+ its openings)
+          </button>
+          <button type="button" onClick={() => onDuplicate("wall", wall.id)} className="btn-ghost w-full px-3 py-1.5 text-[11px]">
+            Duplicate this segment
           </button>
           <p className="text-[11px] text-[var(--muted)]">
             Length {Math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y).toFixed(2)} m
@@ -355,8 +376,44 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
               className="h-8 w-full cursor-pointer rounded-md border border-[var(--border)] bg-black/30" />
           </Row>
           {furn.evidence && <p className="text-[11px] text-[var(--muted)]">Detected as: {furn.evidence}</p>}
+          <button type="button" onClick={() => onDuplicate("furniture", furn.id)} className="btn-ghost w-full px-3 py-1.5 text-[11px]">
+            Duplicate this item
+          </button>
           <button type="button" onClick={() => { onDelete("furniture", furn.id); onClose(); }} className="btn-ghost w-full px-3 py-1.5 text-[11px] text-red-300">
             Delete this item
+          </button>
+        </div>
+      )}
+
+      {selection.kind === "lamp" && room !== undefined && (
+        <div className="space-y-2">
+          <p className="text-xs text-[var(--muted)]">
+            Pendant light for {room.name} ({room.area.toFixed(1)} m²)
+          </p>
+          <button type="button" onClick={onToggleLamp} className="btn-primary w-full px-3 py-2 text-xs">
+            Turn {lampOn ? "off" : "on"}
+          </button>
+        </div>
+      )}
+
+      {selection.kind === "room" && room !== undefined && (
+        <div className="space-y-2">
+          <p className="text-xs text-[var(--muted)]">
+            {room.type.replace(/_/g, " ")} · {room.area.toFixed(1)} m² · {room.wallIds.length} walls
+          </p>
+          <Row label="Floor color">
+            <input
+              type="color"
+              value={/^#[0-9a-fA-F]{6}$/.test(room.color ?? "") ? (room.color as string) : "#ded7c8"}
+              onChange={(e) => onPatch("room", room.id, { color: e.target.value })}
+              className="h-8 w-full cursor-pointer rounded-md border border-[var(--border)] bg-black/30"
+            />
+          </Row>
+          <button type="button" onClick={onToggleLamp} className="btn-ghost w-full px-3 py-1.5 text-xs">
+            Turn room light {lampOn ? "off" : "on"}
+          </button>
+          <button type="button" onClick={() => { onDelete("room", room.id); onClose(); }} className="btn-ghost w-full px-3 py-1.5 text-[11px] text-red-300">
+            Remove room label + floor
           </button>
         </div>
       )}

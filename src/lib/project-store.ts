@@ -11,6 +11,7 @@ export interface SavedProject {
   savedAt: number;
   analysis: HouseAnalysis;
   open: OpenState;
+  lampsOff?: Record<string, boolean>;
   source: AnalysisSource;
 }
 

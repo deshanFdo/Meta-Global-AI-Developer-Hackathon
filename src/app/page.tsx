@@ -173,6 +173,7 @@ export default function Home(): React.JSX.Element {
   const [vrOpen, setVrOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
   const [openMap, setOpenMap] = useState<OpenState>({});
+  const [lampsOff, setLampsOff] = useState<Record<string, boolean>>({});
   const [autoRotate, setAutoRotate] = useState(false);
   const [editTool, setEditTool] = useState<EditTool>("select");
   const [sunHour, setSunHour] = useState<number | null>(null);
@@ -187,7 +188,7 @@ export default function Home(): React.JSX.Element {
   analysisRef.current = analysis;
   const selectionRef = useRef<ElementTag | null>(null);
   selectionRef.current = selection;
-  const handleDeleteElementRef = useRef<(kind: "wall" | "door" | "window" | "furniture", id: string) => void>(() => undefined);
+  const handleDeleteElementRef = useRef<(kind: "wall" | "door" | "window" | "furniture" | "room", id: string) => void>(() => undefined);
   const pastRef = useRef<HouseAnalysis[]>([]);
   const futureRef = useRef<HouseAnalysis[]>([]);
   const [histTick, setHistTick] = useState(0);
@@ -246,6 +247,7 @@ export default function Home(): React.JSX.Element {
     if (auto) {
       setAnalysis(auto.analysis);
       setOpenMap(auto.open ?? {});
+      setLampsOff(auto.lampsOff ?? {});
       setSource(auto.source);
       setModel("autosave");
       setEdited(true);
@@ -257,10 +259,10 @@ export default function Home(): React.JSX.Element {
   useEffect(() => {
     if (!analysis) return;
     const timer = setTimeout(() => {
-      saveAutosave({ analysis, open: openMap, source });
+      saveAutosave({ analysis, open: openMap, lampsOff, source });
     }, 1000);
     return () => clearTimeout(timer);
-  }, [analysis, openMap, source]);
+  }, [analysis, openMap, lampsOff, source]);
 
   const resetForNewAnalysis = useCallback(() => {
     setTextures({});
@@ -268,6 +270,7 @@ export default function Home(): React.JSX.Element {
     setMatches([]);
     setEdited(false);
     setOpenMap({});
+    setLampsOff({});
     setSelection(null);
     pastRef.current = [];
     futureRef.current = [];
@@ -296,7 +299,7 @@ export default function Home(): React.JSX.Element {
         redo();
       } else if ((e.code === "Delete" || e.code === "Backspace") && selectionRef.current) {
         const sel = selectionRef.current;
-        if (sel.kind !== "roof") {
+        if (sel.kind !== "roof" && sel.kind !== "lamp") {
           e.preventDefault();
           handleDeleteElementRef.current(sel.kind, sel.id);
           setSelection(null);
@@ -466,6 +469,7 @@ export default function Home(): React.JSX.Element {
         floorMap: await load(textures.floor),
         roofMap: await load(textures.roof),
         open: openMap,
+        lampsOff,
       });
       await exportGroupToGLB(group, `${slug(analysis.metadata.style)}-3d-model.glb`);
       disposeGroup(group);
@@ -474,7 +478,7 @@ export default function Home(): React.JSX.Element {
     } finally {
       setExportBusy(false);
     }
-  }, [analysis, exportBusy, textures, openMap]);
+  }, [analysis, exportBusy, textures, openMap, lampsOff]);
 
   const handleExportDXF = useCallback(() => {
     if (!analysis) return;
@@ -599,12 +603,112 @@ export default function Home(): React.JSX.Element {
           }),
         };
       }
+      if (kind === "room") {
+        return {
+          ...prev,
+          rooms: prev.rooms.map((r) =>
+            r.id === id && isHex(patch.color) ? { ...r, color: patch.color } : r
+          ),
+        };
+      }
       return prev;
     });
   }, [commit]);
 
-  const handleDeleteElement = useCallback((kind: "wall" | "door" | "window" | "furniture", id: string) => {
+  const handleDuplicate = useCallback((kind: "wall" | "door" | "window" | "furniture", id: string) => {
     commit((prev) => {
+      if (kind === "wall") {
+        const wall = prev.walls.find((w) => w.id === id);
+        if (!wall) return prev;
+        const dx = 0.6;
+        const dy = 0.6;
+        return {
+          ...prev,
+          walls: [
+            ...prev.walls,
+            {
+              ...wall,
+              id: uid("wall"),
+              start: { x: wall.start.x + dx, y: wall.start.y + dy },
+              end: { x: wall.end.x + dx, y: wall.end.y + dy },
+            },
+          ],
+        };
+      }
+      if (kind === "door") {
+        const door = prev.doors.find((d) => d.id === id);
+        const wall = prev.walls.find((w) => w.id === door?.wallId);
+        if (!door || !wall) return prev;
+        const dx = wall.end.x - wall.start.x;
+        const dy = wall.end.y - wall.start.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 0.2) return prev;
+        const t = ((door.position.x - wall.start.x) * dx + (door.position.y - wall.start.y) * dy) / len;
+        const half = door.width / 2 + 0.05;
+        const nt = Math.max(half, Math.min(len - half, t + door.width + 0.3));
+        return {
+          ...prev,
+          doors: [
+            ...prev.doors,
+            {
+              ...door,
+              id: uid("door"),
+              position: {
+                x: Math.round((wall.start.x + (dx / len) * nt) * 1000) / 1000,
+                y: Math.round((wall.start.y + (dy / len) * nt) * 1000) / 1000,
+              },
+            },
+          ],
+        };
+      }
+      if (kind === "window") {
+        const win = prev.windows.find((w) => w.id === id);
+        const wall = prev.walls.find((w) => w.id === win?.wallId);
+        if (!win || !wall) return prev;
+        const dx = wall.end.x - wall.start.x;
+        const dy = wall.end.y - wall.start.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 0.2) return prev;
+        const t = ((win.position.x - wall.start.x) * dx + (win.position.y - wall.start.y) * dy) / len;
+        const half = win.width / 2 + 0.05;
+        const nt = Math.max(half, Math.min(len - half, t + win.width + 0.3));
+        return {
+          ...prev,
+          windows: [
+            ...prev.windows,
+            {
+              ...win,
+              id: uid("window"),
+              position: {
+                x: Math.round((wall.start.x + (dx / len) * nt) * 1000) / 1000,
+                y: Math.round((wall.start.y + (dy / len) * nt) * 1000) / 1000,
+              },
+            },
+          ],
+        };
+      }
+      const item = (prev.furniture ?? []).find((f) => f.id === id);
+      if (!item) return prev;
+      return {
+        ...prev,
+        furniture: [
+          ...(prev.furniture ?? []),
+          { ...item, id: uid("furn"), position: { x: item.position.x + 0.6, y: item.position.y + 0.6 } },
+        ],
+      };
+    });
+  }, [commit]);
+  const handleDeleteElement = useCallback((kind: "wall" | "door" | "window" | "furniture" | "room", id: string) => {
+    commit((prev) => {
+      if (kind === "room") {
+        setLampsOff((m) => {
+          if (!m[id]) return m;
+          const next = { ...m };
+          delete next[id];
+          return next;
+        });
+        return { ...prev, rooms: prev.rooms.filter((r) => r.id !== id) };
+      }
       if (kind === "furniture") {
         return { ...prev, furniture: (prev.furniture ?? []).filter((f) => f.id !== id) };
       }
@@ -843,10 +947,11 @@ export default function Home(): React.JSX.Element {
     });
   }, [commit]);
 
-  const handleImportProject = useCallback((data: { analysis: HouseAnalysis; open: OpenState; source: AnalysisSource }) => {
+  const handleImportProject = useCallback((data: { analysis: HouseAnalysis; open: OpenState; lampsOff?: Record<string, boolean>; source: AnalysisSource }) => {
     resetForNewAnalysis();
     setAnalysis(splitWallsAtJunctions(data.analysis));
     setOpenMap(data.open ?? {});
+    setLampsOff(data.lampsOff ?? {});
     setSource(data.source);
     setModel("project file");
     setEdited(true);
@@ -856,6 +961,11 @@ export default function Home(): React.JSX.Element {
 
   const handleSetOpen = useCallback((patch: OpenState) => {
     setOpenMap((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  const handleToggleLamp = useCallback((roomId: string) => {
+    setLampsOff((prev) => ({ ...prev, [roomId]: !prev[roomId] }));
+    setEdited(true);
   }, []);
 
   const handleToggleOpen = useCallback((kind: "door" | "window", id: string) => {
@@ -972,6 +1082,17 @@ export default function Home(): React.JSX.Element {
                   handleDeleteElement(kind, id);
                   setSelection(null);
                 }}
+                onDuplicate={handleDuplicate}
+                lampOn={
+                  selection.kind === "lamp" || selection.kind === "room"
+                    ? lampsOff[selection.id] !== true
+                    : undefined
+                }
+                onToggleLamp={() => {
+                  if (selection.kind === "lamp" || selection.kind === "room") {
+                    handleToggleLamp(selection.id);
+                  }
+                }}
                 onSetAllWallHeight={handleSetAllWallHeight}
                 onNudge={handleNudgeElement}
                 onClose={() => setSelection(null)}
@@ -1052,7 +1173,7 @@ export default function Home(): React.JSX.Element {
                   onDXF={handleExportDXF}
                   onCSV={handleExportCSV}
                   busy={exportBusy}
-                  project={{ analysis, open: openMap, source }}
+                  project={{ analysis, open: openMap, lampsOff, source }}
                   onImportProject={handleImportProject}
                 />
               )}
@@ -1083,6 +1204,7 @@ export default function Home(): React.JSX.Element {
                 cameraPreset={cameraPreset}
                 open={openMap}
                 onToggleOpen={handleToggleOpen}
+                onToggleLamp={handleToggleLamp}
                 autoRotate={autoRotate}
                 editTool={editTool}
                 onAddWall={handleAddWall}
@@ -1098,6 +1220,7 @@ export default function Home(): React.JSX.Element {
                 pendingFurniture={pendingFurniture}
                 sunHour={sunHour}
                 showScaleFigure={showScaleFigure}
+                lampsOff={lampsOff}
                 selection={editTool === "select" ? selection : null}
                 onSelect={setSelection}
               />
@@ -1143,6 +1266,7 @@ export default function Home(): React.JSX.Element {
           analysis={analysis}
           textures={textures}
           open={openMap}
+          lampsOff={lampsOff}
           onSetOpen={handleSetOpen}
           showRoof={showRoof}
           onShowRoof={setShowRoof}
@@ -1163,21 +1287,26 @@ export default function Home(): React.JSX.Element {
           analysis={analysis}
           textures={textures}
           open={openMap}
+          lampsOff={lampsOff}
           onToggleOpen={handleToggleOpen}
+          onToggleLamp={handleToggleLamp}
           onPatch={handlePatch}
           onDelete={handleDeleteElement}
+          onDuplicate={handleDuplicate}
           onSetAllWallHeight={handleSetAllWallHeight}
           onNudge={handleNudgeElement}
           onClose={() => setWalkOpen(false)}
         />
       )}
-      {arOpen && analysis && <ARModal analysis={analysis} textures={textures} open={openMap} onClose={() => setArOpen(false)} />}
+      {arOpen && analysis && <ARModal analysis={analysis} textures={textures} open={openMap} lampsOff={lampsOff} onClose={() => setArOpen(false)} />}
       {vrOpen && analysis && (
         <VRWalk
           analysis={analysis}
           textures={textures}
           open={openMap}
+          lampsOff={lampsOff}
           onToggleOpen={handleToggleOpen}
+          onToggleLamp={handleToggleLamp}
           onPatch={handlePatch}
           onClose={() => setVrOpen(false)}
         />

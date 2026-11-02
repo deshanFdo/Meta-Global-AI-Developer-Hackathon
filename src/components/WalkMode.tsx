@@ -17,9 +17,12 @@ interface WalkModeProps {
   analysis: HouseAnalysis;
   textures: GeneratedTextures;
   open: OpenState;
+  lampsOff: Record<string, boolean>;
   onToggleOpen: (kind: "door" | "window", id: string) => void;
+  onToggleLamp: (roomId: string) => void;
   onPatch: (kind: ElementTag["kind"], id: string, patch: Record<string, unknown>) => void;
-  onDelete: (kind: "wall" | "door" | "window" | "furniture", id: string) => void;
+  onDelete: (kind: "wall" | "door" | "window" | "furniture" | "room", id: string) => void;
+  onDuplicate: (kind: "wall" | "door" | "window" | "furniture", id: string) => void;
   onSetAllWallHeight: (h: number) => void;
   onNudge: (kind: "door" | "window", id: string, dir: 1 | -1) => void;
   onClose: () => void;
@@ -67,7 +70,7 @@ function DustMotes({ w, d, h }: { w: number; d: number; h: number }): React.JSX.
   });
 
   return (
-    <points ref={ref}>
+    <points ref={ref} frustumCulled={false}>
       <bufferGeometry>
         <bufferAttribute attach="attributes-position" args={[data.base, 3]} />
       </bufferGeometry>
@@ -229,7 +232,7 @@ function TargetScanner({
 }
 
 export default function WalkMode(props: WalkModeProps): React.JSX.Element {
-  const { analysis, textures, open, onToggleOpen, onPatch, onDelete, onSetAllWallHeight, onNudge, onClose } = props;
+  const { analysis, textures, open, lampsOff, onToggleOpen, onToggleLamp, onPatch, onDelete, onDuplicate, onSetAllWallHeight, onNudge, onClose } = props;
   const containerRef = useRef<HTMLDivElement>(null);
   const lockRef = useRef<{ lock: () => void } | null>(null);
   const [mode, setMode] = useState<InputMode>("menu");
@@ -256,8 +259,9 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
         floorMap: maps.floor ?? null,
         roofMap: maps.roof ?? null,
         open,
+        lampsOff,
       }),
-    [analysis, maps, open]
+    [analysis, maps, open, lampsOff]
   );
   const groupRef = useRef<THREE.Group>(group);
   groupRef.current = group;
@@ -345,13 +349,14 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
       else if (e.code === "KeyM") toggleMute();
       else if ((e.code === "Delete" || e.code === "Backspace") && selectionRef.current) {
         const sel = selectionRef.current;
-        if (sel.kind !== "roof") {
+        if (sel.kind !== "roof" && sel.kind !== "lamp") {
           onDeleteRef.current(sel.kind, sel.id);
           setSelection(null);
         }
       } else if (e.code === "KeyE" && mode === "walk") {
         const t = targetRef.current;
         if (t && (t.kind === "door" || t.kind === "window")) onToggleOpen(t.kind, t.id);
+        else if (t && t.kind === "lamp") onToggleLamp(t.id);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -359,15 +364,6 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
     // exit/toggleFullscreen/toggleMute are stable enough; mode is the live dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, onToggleOpen, toggleMute]);
-
-  const lampPositions = useMemo(() => {
-    const { overallWidth: w, overallDepth: d, wallHeight: h } = analysis.metadata;
-    return analysis.rooms.slice(0, 8).map((r) => {
-      const cx = r.vertices.reduce((s, v) => s + v.x, 0) / r.vertices.length - w / 2;
-      const cz = r.vertices.reduce((s, v) => s + v.y, 0) / r.vertices.length - d / 2;
-      return { id: r.id, x: cx, y: Math.max(1.2, h - 0.4), z: cz };
-    });
-  }, [analysis]);
 
   const styleOf = (tag: ElementTag): string => {
     if (tag.kind === "door") return analysis.doors.find((d) => d.id === tag.id)?.style ?? "";
@@ -384,6 +380,15 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
         ? `${tag.id} · ${style} · ${state} — E to ${state === "open" ? "close" : "open"} · click to customize`
         : `${tag.id} · ${style} (fixed) · click to customize`;
     }
+    if (tag.kind === "lamp") {
+      const room = analysis.rooms.find((r) => r.id === tag.id);
+      const on = lampsOff[tag.id] !== true;
+      return `${room?.name ?? "Lamp"} light · ${on ? "on" : "off"} — E to switch · click to customize`;
+    }
+    if (tag.kind === "room") {
+      const room = analysis.rooms.find((r) => r.id === tag.id);
+      return `${room?.name ?? tag.id} · ${room?.area.toFixed(1) ?? ""} m² · click to customize`;
+    }
     return `${tag.id} · click to customize`;
   };
 
@@ -398,9 +403,6 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
           <color attach="background" args={["#0b0e16"]} />
           <hemisphereLight args={["#dfe8ff", "#3a3428", 0.9]} />
           <ambientLight intensity={0.45} />
-          {lampPositions.map((l) => (
-            <pointLight key={l.id} position={[l.x, l.y, l.z]} intensity={14} distance={9} decay={2} color="#ffe7c4" />
-          ))}
           <primitive object={group} />
           <InteractiveAnimator group={group} open={open} />
           <Walker analysis={analysis} active={mode === "walk"} open={open} />
@@ -490,6 +492,13 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
             onDelete={(kind, id) => {
               onDelete(kind, id);
               setSelection(null);
+            }}
+            onDuplicate={onDuplicate}
+            lampOn={
+              selection.kind === "lamp" || selection.kind === "room" ? lampsOff[selection.id] !== true : undefined
+            }
+            onToggleLamp={() => {
+              if (selection.kind === "lamp" || selection.kind === "room") onToggleLamp(selection.id);
             }}
             onSetAllWallHeight={onSetAllWallHeight}
             onNudge={onNudge}

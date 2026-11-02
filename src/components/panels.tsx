@@ -640,8 +640,8 @@ export function ExportTab({
   onDXF: () => void;
   onCSV: () => void;
   busy: boolean;
-  project: { analysis: HouseAnalysis; open: Record<string, boolean>; source: AnalysisSource };
-  onImportProject: (data: { analysis: HouseAnalysis; open: Record<string, boolean>; source: AnalysisSource }) => void;
+  project: { analysis: HouseAnalysis; open: Record<string, boolean>; lampsOff: Record<string, boolean>; source: AnalysisSource };
+  onImportProject: (data: { analysis: HouseAnalysis; open: Record<string, boolean>; lampsOff?: Record<string, boolean>; source: AnalysisSource }) => void;
 }): React.JSX.Element {
   const [saveName, setSaveName] = useState("");
   const [saves, setSaves] = useState<Array<{ name: string; savedAt: number }>>([]);
@@ -672,7 +672,7 @@ export function ExportTab({
 
   const exportProject = (): void => {
     const blob = new Blob(
-      [JSON.stringify({ version: 1, savedAt: Date.now(), analysis: project.analysis, open: project.open, source: project.source })],
+      [JSON.stringify({ version: 1, savedAt: Date.now(), analysis: project.analysis, open: project.open, lampsOff: project.lampsOff, source: project.source })],
       { type: "application/json" }
     );
     const link = document.createElement("a");
@@ -689,6 +689,7 @@ export function ExportTab({
         const data = JSON.parse(String(reader.result)) as {
           analysis?: HouseAnalysis;
           open?: Record<string, boolean>;
+          lampsOff?: Record<string, boolean>;
           source?: AnalysisSource;
         };
         if (!data.analysis || !Array.isArray(data.analysis.walls) || !data.analysis.metadata) {
@@ -697,7 +698,8 @@ export function ExportTab({
         onImportProject({
           analysis: data.analysis,
           open: data.open && typeof data.open === "object" ? data.open : {},
-          source: data.source === "live" || data.source === "sample" || data.source === "file" ? data.source : "file",
+          lampsOff: data.lampsOff && typeof data.lampsOff === "object" ? data.lampsOff : {},
+          source: data.source === "live" || data.source === "sample" || data.source === "file" || data.source === "blank" ? data.source : "file",
         });
         setMsg(null);
       } catch {
@@ -710,7 +712,7 @@ export function ExportTab({
 
   const saveNamed = (): void => {
     const name = saveName.trim() || `Project ${saves.length + 1}`;
-    const ok = saveProject(name, { analysis: project.analysis, open: project.open, source: project.source });
+    const ok = saveProject(name, { analysis: project.analysis, open: project.open, lampsOff: project.lampsOff, source: project.source });
     setMsg(ok ? `Saved “${name}” in this browser.` : "Browser storage is full — export a file instead.");
     if (ok) {
       setSaveName("");
@@ -780,7 +782,7 @@ export function ExportTab({
                     onClick={() => {
                       const loaded = loadProject(s.name);
                       if (loaded) {
-                        onImportProject({ analysis: loaded.analysis, open: loaded.open, source: loaded.source });
+                        onImportProject({ analysis: loaded.analysis, open: loaded.open, lampsOff: loaded.lampsOff, source: loaded.source });
                         setMsg(null);
                       } else setMsg("That save is corrupted.");
                     }}

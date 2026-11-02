@@ -15,6 +15,8 @@ export interface GeometryOptions {
   roofMap?: THREE.Texture | null;
   /** Initial open states, keyed by openKey(). New pivots start at their target (no snap-back on rebuild). */
   open?: OpenState;
+  /** Room ids whose pendant lamp is switched off. */
+  lampsOff?: Record<string, boolean>;
 }
 
 /** Open/closed state per openable element, keyed by openKey(kind, id). */
@@ -78,7 +80,7 @@ export function updatePivots(group: THREE.Group, dt: number): void {
 
 /** Tag attached to selectable meshes so walk/VR modes can identify elements. */
 export interface ElementTag {
-  kind: "wall" | "door" | "window" | "furniture" | "roof";
+  kind: "wall" | "door" | "window" | "furniture" | "roof" | "lamp" | "room";
   id: string;
 }
 
@@ -147,10 +149,7 @@ export function buildHouseGroup(analysis: HouseAnalysis, opts: GeometryOptions):
   // ---- ground slab ----
   box(group, matSlab, 0, -0.1, 0, W + 0.4, 0.2, D + 0.4);
 
-  // ---- room floors (flat polygons just above the slab) ----
-  const floorMat = opts.floorMap
-    ? new THREE.MeshStandardMaterial({ map: opts.floorMap, roughness: 0.8 })
-    : null;
+  // ---- room floors (flat polygons just above the slab; selectable, recolorable) ----
   for (const room of analysis.rooms) {
     const shape = new THREE.Shape();
     room.vertices.forEach((v, i) => {
@@ -162,11 +161,81 @@ export function buildHouseGroup(analysis: HouseAnalysis, opts: GeometryOptions):
     });
     shape.closePath();
     const geo = new THREE.ShapeGeometry(shape);
-    const mesh = new THREE.Mesh(geo, floorMat ?? std(roomTint(room.type)));
+    const mesh = new THREE.Mesh(
+      geo,
+      new THREE.MeshStandardMaterial({
+        color: room.color || roomTint(room.type),
+        roughness: 0.85,
+        map: opts.floorMap ?? null,
+      })
+    );
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.y = 0.012;
     mesh.receiveShadow = true;
+    tag(mesh, "room", room.id);
     group.add(mesh);
+  }
+
+  // ---- pendant lamps (one per indoor room; toggled via opts.lampsOff) ----
+  for (const room of analysis.rooms) {
+    if (room.area < 2 || NO_LAMP_TYPES.has(room.type) || room.vertices.length === 0) continue;
+    const cx = room.vertices.reduce((s, v) => s + v.x, 0) / room.vertices.length;
+    const cy = room.vertices.reduce((s, v) => s + v.y, 0) / room.vertices.length;
+    const on = !(opts.lampsOff && opts.lampsOff[room.id]);
+    const lx = toX(cx);
+    const lz = toZ(cy);
+    const cord = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.015, 0.015, 0.7, 6),
+      std("#2c313b", { roughness: 0.6 })
+    );
+    cord.position.set(lx, H - 0.35, lz);
+    tag(cord, "lamp", room.id);
+    group.add(cord);
+    const shade = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.09, 0.24, 0.26, 14, 1, true),
+      new THREE.MeshStandardMaterial({
+        color: "#e8ddc8",
+        roughness: 0.9,
+        side: THREE.DoubleSide,
+        emissive: on ? "#ffcf96" : "#000000",
+        emissiveIntensity: on ? 0.5 : 0,
+      })
+    );
+    shade.position.set(lx, H - 0.78, lz);
+    shade.castShadow = true;
+    tag(shade, "lamp", room.id);
+    group.add(shade);
+    const bulb = new THREE.Mesh(
+      new THREE.SphereGeometry(0.06, 10, 8),
+      new THREE.MeshStandardMaterial({
+        color: "#fff2d9",
+        emissive: "#ffd9a0",
+        emissiveIntensity: on ? 2.4 : 0.05,
+      })
+    );
+    bulb.position.set(lx, H - 0.88, lz);
+    tag(bulb, "lamp", room.id);
+    group.add(bulb);
+    if (on) {
+      const pt = new THREE.PointLight("#ffcf96", 9, 9, 2);
+      pt.position.set(lx, H - 1.0, lz);
+      group.add(pt);
+    }
+  }
+
+  // ---- chimney (smoke anchor lives in the environment dressing) ----
+  {
+    const base = chimneyBase(analysis);
+    const top = roofTopY(analysis);
+    const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.6, 0.55), std("#7a4438", { roughness: 0.95 }));
+    chimney.position.set(base.x, top + 0.35, base.z);
+    chimney.castShadow = true;
+    chimney.receiveShadow = true;
+    group.add(chimney);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.1, 0.7), std("#4a4a4a", { roughness: 0.9 }));
+    cap.position.set(base.x, top + 1.18, base.z);
+    cap.castShadow = true;
+    group.add(cap);
   }
 
   // ---- opening spans per wall ----
@@ -638,6 +707,24 @@ function roomTint(type: string): string {
     default:
       return "#ded7c8";
   }
+}
+
+const NO_LAMP_TYPES = new Set(["terrace", "patio", "balcony", "porch"]);
+
+/** Top of the roof in world Y (for chimney + smoke placement). */
+export function roofTopY(analysis: HouseAnalysis): number {
+  const { overallWidth: w, overallDepth: d, wallHeight: h } = analysis.metadata;
+  const { type, pitch } = analysis.roof;
+  if (type === "flat") return h + 0.16;
+  if (type === "shed" || type === "butterfly") return h + 1.2;
+  const rise = Math.max(0.3, (Math.min(w, d) / 2) * Math.tan(((pitch || 25) * Math.PI) / 180));
+  return h + rise;
+}
+
+/** Chimney base position in world coords (plan 78% x 30%, clamped inside). */
+export function chimneyBase(analysis: HouseAnalysis): { x: number; z: number } {
+  const { overallWidth: w, overallDepth: d } = analysis.metadata;
+  return { x: Math.min(w / 2 - 1, Math.max(-w / 2 + 1, w * 0.28)), z: Math.min(d / 2 - 1, Math.max(-d / 2 + 1, -d * 0.2)) };
 }
 
 /** Dispose geometries/materials of a built group (textures are shared; caller owns them). */

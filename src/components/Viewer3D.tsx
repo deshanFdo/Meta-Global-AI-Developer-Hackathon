@@ -5,7 +5,7 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber"
 import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import type { EditTool, GeneratedTextures, HouseAnalysis } from "@/types";
-import { buildHouseGroup, disposeGroup, findTag, type ElementTag, type OpenState } from "@/lib/geometry";
+import { buildHouseGroup, chimneyBase, disposeGroup, findTag, roofTopY, type ElementTag, type OpenState } from "@/lib/geometry";
 import { buildFurniture, nominalSize, type CatalogEntry } from "@/lib/furnish";
 import InteractiveAnimator from "./InteractiveAnimator";
 import SelectionHighlight from "./SelectionHighlight";
@@ -23,6 +23,7 @@ interface ViewerProps {
   cameraPreset: CameraPreset;
   open: OpenState;
   onToggleOpen: (kind: "door" | "window", id: string) => void;
+  onToggleLamp: (roomId: string) => void;
   autoRotate: boolean;
   editTool: EditTool;
   onAddWall: (start: { x: number; y: number }, end: { x: number; y: number }) => void;
@@ -35,6 +36,7 @@ interface ViewerProps {
   pendingFurniture: CatalogEntry | null;
   sunHour: number | null;
   showScaleFigure: boolean;
+  lampsOff: Record<string, boolean>;
   selection: ElementTag | null;
   onSelect: (tag: ElementTag | null) => void;
 }
@@ -101,8 +103,18 @@ function seededRandom(seed: number): () => number {
   };
 }
 
-/** Ground, trees, drifting clouds and night stars around the house. */
-export function EnvironmentDressing({ w, d, night }: { w: number; d: number; night: boolean }): React.JSX.Element {
+/** Ground, trees, drifting clouds, chimney smoke, birds, flowers and night stars. */
+export function EnvironmentDressing({
+  w,
+  d,
+  night,
+  chimney,
+}: {
+  w: number;
+  d: number;
+  night: boolean;
+  chimney: { x: number; z: number; y: number } | null;
+}): React.JSX.Element {
   const clouds = useRef<THREE.Group>(null);
 
   const trees = useMemo(() => {
@@ -201,6 +213,153 @@ export function EnvironmentDressing({ w, d, night }: { w: number; d: number; nig
           <pointsMaterial size={1.6} sizeAttenuation={false} color="#cdd8ff" transparent opacity={0.8} depthWrite={false} />
         </points>
       )}
+      <Birds r={Math.max(w, d)} />
+      <FlowerBed w={w} d={d} />
+      {chimney && <SmokePlume x={chimney.x} z={chimney.z} y={chimney.y} />}
+    </>
+  );
+}
+
+function SmokePlume({ x, z, y }: { x: number; z: number; y: number }): React.JSX.Element {
+  const ref = useRef<THREE.Points>(null);
+  const data = useMemo(() => {
+    const count = 34;
+    const base = new Float32Array(count * 3);
+    const seed = new Float32Array(count * 2);
+    let s = 4242;
+    for (let i = 0; i < count; i += 1) {
+      s = (s * 1664525 + 1013904223) % 4294967296;
+      seed[i * 2] = s / 4294967296;
+      s = (s * 1664525 + 1013904223) % 4294967296;
+      seed[i * 2 + 1] = 0.5 + (s / 4294967296) * 0.5;
+    }
+    return { base, seed, count };
+  }, []);
+
+  useFrame(({ clock }) => {
+    const pts = ref.current;
+    if (!pts) return;
+    const pos = pts.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const t = clock.elapsedTime;
+    for (let i = 0; i < data.count; i += 1) {
+      const age = (t * 0.12 * data.seed[i * 2 + 1] + data.seed[i * 2]) % 1;
+      pos.setXYZ(
+        i,
+        x + age * 2.4 + Math.sin(age * 6 + data.seed[i * 2] * 9) * 0.35 * age,
+        y + age * 4.5,
+        z + age * 0.9 + Math.cos(age * 5 + data.seed[i * 2] * 7) * 0.35 * age
+      );
+    }
+    pos.needsUpdate = true;
+  });
+
+  return (
+    <points ref={ref} frustumCulled={false}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[data.base, 3]} />
+      </bufferGeometry>
+      <pointsMaterial size={0.55} color="#aab2c0" transparent opacity={0.3} depthWrite={false} sizeAttenuation />
+    </points>
+  );
+}
+
+function Birds({ r }: { r: number }): React.JSX.Element {
+  const group = useRef<THREE.Group>(null);
+  const wings = useRef<Array<{ l: THREE.Object3D | null; r: THREE.Object3D | null }>>([
+    { l: null, r: null },
+    { l: null, r: null },
+    { l: null, r: null },
+  ]);
+
+  useFrame(({ clock }) => {
+    const g = group.current;
+    if (!g) return;
+    const t = clock.elapsedTime;
+    g.children.forEach((bird, i) => {
+      const a = t * (0.09 + i * 0.018) + (i * Math.PI * 2) / 3;
+      const rad = r + 15 + i * 5;
+      bird.position.set(Math.cos(a) * rad, 17 + i * 2 + Math.sin(t * 0.7 + i) * 0.8, Math.sin(a) * rad);
+      bird.rotation.y = -a;
+      const flap = Math.sin(t * 9 + i * 2) * 0.55;
+      const refs = wings.current[i];
+      if (refs.l) refs.l.rotation.z = flap;
+      if (refs.r) refs.r.rotation.z = -flap;
+    });
+  });
+
+  return (
+    <group ref={group}>
+      {[0, 1, 2].map((i) => (
+        <group key={i}>
+          <mesh scale={[1, 0.8, 2.2]}>
+            <sphereGeometry args={[0.12, 8, 6]} />
+            <meshBasicMaterial color="#232936" />
+          </mesh>
+          <group
+            position={[-0.05, 0.02, 0]}
+            ref={(el) => {
+              wings.current[i].l = el;
+            }}
+          >
+            <mesh position={[-0.3, 0, 0]}>
+              <boxGeometry args={[0.6, 0.02, 0.18]} />
+              <meshBasicMaterial color="#2c3444" side={THREE.DoubleSide} />
+            </mesh>
+          </group>
+          <group
+            position={[0.05, 0.02, 0]}
+            ref={(el) => {
+              wings.current[i].r = el;
+            }}
+          >
+            <mesh position={[0.3, 0, 0]}>
+              <boxGeometry args={[0.6, 0.02, 0.18]} />
+              <meshBasicMaterial color="#2c3444" side={THREE.DoubleSide} />
+            </mesh>
+          </group>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+const FLOWER_COLORS = ["#c65b7a", "#e8b83c", "#7a9cc6", "#e8e6e1", "#b06ac2"];
+
+function FlowerBed({ w, d }: { w: number; d: number }): React.JSX.Element {
+  const flowers = useMemo(() => {
+    let s = 777;
+    const rand = (): number => {
+      s = (s * 1664525 + 1013904223) % 4294967296;
+      return s / 4294967296;
+    };
+    const r = Math.max(w, d);
+    return Array.from({ length: 14 }, (_, i) => {
+      const angle = rand() * Math.PI * 2;
+      const dist = r * 0.75 + 4 + rand() * 8;
+      return {
+        x: Math.cos(angle) * dist,
+        z: Math.sin(angle) * dist,
+        s: 0.8 + rand() * 0.5,
+        color: FLOWER_COLORS[i % FLOWER_COLORS.length],
+        key: i,
+      };
+    });
+  }, [w, d]);
+
+  return (
+    <>
+      {flowers.map((f) => (
+        <group key={f.key} position={[f.x, 0, f.z]} scale={f.s}>
+          <mesh position={[0, 0.14, 0]}>
+            <cylinderGeometry args={[0.015, 0.02, 0.28, 6]} />
+            <meshStandardMaterial color="#3f7a4d" roughness={1} />
+          </mesh>
+          <mesh position={[0, 0.32, 0]}>
+            <sphereGeometry args={[0.07, 8, 6]} />
+            <meshStandardMaterial color={f.color} roughness={0.8} />
+          </mesh>
+        </group>
+      ))}
     </>
   );
 }
@@ -212,7 +371,7 @@ export const LIGHTS: Record<LightingMode, { bg: string; sun: string; intensity: 
 };
 
 export default function Viewer3D(props: ViewerProps): React.JSX.Element {
-  const { analysis, textures, showRoof, showLabels, showDimensions, lighting, cameraPreset, open, onToggleOpen, autoRotate, editTool, onAddWall, onAddOpening, onMoveWall, onMoveFurniture, onCheckpoint, onAddFurniture, onCancelTool, pendingFurniture, sunHour, showScaleFigure, selection, onSelect } = props;
+  const { analysis, textures, showRoof, showLabels, showDimensions, lighting, cameraPreset, open, onToggleOpen, onToggleLamp, autoRotate, editTool, onAddWall, onAddOpening, onMoveWall, onMoveFurniture, onCheckpoint, onAddFurniture, onCancelTool, pendingFurniture, sunHour, showScaleFigure, lampsOff, selection, onSelect } = props;
   const { overallWidth: w, overallDepth: d, wallHeight: h } = analysis.metadata;
   const light = LIGHTS[lighting];
 
@@ -257,8 +416,9 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
         floorMap: maps.floor ?? null,
         roofMap: maps.roof ?? null,
         open,
+        lampsOff,
       }),
-    [analysis, showRoof, maps, open]
+    [analysis, showRoof, maps, open, lampsOff]
   );
 
   useEffect(() => () => disposeGroup(group), [group]);
@@ -284,16 +444,12 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
     });
   }, [group, lighting]);
 
-  const lampPositions = useMemo(() => {
-    const { overallWidth: lw, overallDepth: ld, wallHeight: lh } = analysis.metadata;
-    return analysis.rooms.slice(0, 8).map((r) => {
-      const cx = r.vertices.reduce((s, v) => s + v.x, 0) / r.vertices.length - lw / 2;
-      const cz = r.vertices.reduce((s, v) => s + v.y, 0) / r.vertices.length - ld / 2;
-      return { id: r.id, x: cx, y: Math.max(1.2, lh - 0.4), z: cz };
-    });
-  }, [analysis]);
-
   const flight = useRef({ active: false });
+
+  const chimney = useMemo(() => {
+    const base = chimneyBase(analysis);
+    return { x: base.x, z: base.z, y: roofTopY(analysis) + 1.3 };
+  }, [analysis]);
 
   // ---- editor state (add / move / measure tools) ----
   const toPlan = useCallback(
@@ -464,15 +620,17 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
       <primitive
         object={group}
         onClick={(e: ThreeEvent<MouseEvent>) => {
-          e.stopPropagation();
           if (e.delta > 6) return;
           const tag: ElementTag | null = findTag(e.object);
           if ((editTool === "add-door" || editTool === "add-window") && tag?.kind === "wall") {
+            e.stopPropagation();
             onAddOpening(editTool === "add-door" ? "door" : "window", tag.id, toPlan(e.point.x, e.point.z));
             return;
           }
           if (editTool !== "select") return;
-          // Single click selects anything; doors/windows open on double-click.
+          e.stopPropagation();
+          // Single click selects anything; lamps toggle immediately too.
+          if (tag?.kind === "lamp") onToggleLamp(tag.id);
           onSelect(tag);
         }}
         onDoubleClick={(e: ThreeEvent<MouseEvent>) => {
@@ -625,11 +783,7 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
       )}
       <InteractiveAnimator group={group} open={open} />
       <SelectionHighlight group={group} selection={editTool === "select" ? selection : null} />
-      <EnvironmentDressing w={w} d={d} night={lighting === "night"} />
-      {lighting === "night" &&
-        lampPositions.map((l) => (
-          <pointLight key={l.id} position={[l.x, l.y, l.z]} intensity={10} distance={8} decay={2} color="#ffcf96" />
-        ))}
+      <EnvironmentDressing w={w} d={d} night={lighting === "night"} chimney={chimney} />
       {showLabels &&
         labels
           .filter((l) => l.area >= 6)
@@ -684,7 +838,7 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
       />
     </Canvas>
       <div className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-black/55 px-2.5 py-1 text-[11px] text-white/75">
-        {editTool === "select" && "Click to select · double-click doors/windows to open · Del deletes · drag to orbit"}
+        {editTool === "select" && "Click to select · lamps switch · double-click doors/windows to open · Del deletes"}
         {editTool === "move" && "Drag a wall or furniture to move it · right-click cancels"}
         {editTool === "add-wall" && (pendingStart ? "Click the end point · right-click cancels" : "Click the floor to start a wall")}
         {(editTool === "add-door" || editTool === "add-window") && "Click a wall where the opening should go"}

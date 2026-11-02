@@ -5,7 +5,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid } from "@react-three/drei";
 import * as THREE from "three";
 import type { GeneratedTextures, HouseAnalysis } from "@/types";
-import { buildHouseGroup, disposeGroup, type OpenState } from "@/lib/geometry";
+import { buildHouseGroup, chimneyBase, disposeGroup, roofTopY, type OpenState } from "@/lib/geometry";
 import { buildTour, type TourBeat } from "@/lib/tour";
 import { useTextureMaps } from "@/lib/useTextureMaps";
 import { doorSound } from "@/lib/sound";
@@ -16,6 +16,7 @@ interface TourModeProps {
   analysis: HouseAnalysis;
   textures: GeneratedTextures;
   open: OpenState;
+  lampsOff: Record<string, boolean>;
   onSetOpen: (patch: OpenState) => void;
   showRoof: boolean;
   onShowRoof: (v: boolean) => void;
@@ -68,7 +69,7 @@ function TourCamera({
 }
 
 export default function TourMode(props: TourModeProps): React.JSX.Element {
-  const { analysis, textures, open, onSetOpen, lighting, onLighting, sunHour, onSunHour, onClose, onWalk } = props;
+  const { analysis, textures, open, lampsOff, onSetOpen, lighting, onLighting, sunHour, onSunHour, onClose, onWalk } = props;
   const beats = useMemo(() => buildTour(analysis), [analysis]);
   const total = useMemo(() => beats.reduce((s, b) => s + b.dur, 0), [beats]);
   const [beatIndex, setBeatIndex] = useState(0);
@@ -89,22 +90,19 @@ export default function TourMode(props: TourModeProps): React.JSX.Element {
         floorMap: maps.floor ?? null,
         roofMap: maps.roof ?? null,
         open,
+        lampsOff,
       }),
-    [analysis, showRoofNow, maps, open]
+    [analysis, showRoofNow, maps, open, lampsOff]
   );
   useEffect(() => () => disposeGroup(group), [group]);
 
+  const chimney = useMemo(() => {
+    const base = chimneyBase(analysis);
+    return { x: base.x, z: base.z, y: roofTopY(analysis) + 1.3 };
+  }, [analysis]);
+
   const { overallWidth: w, overallDepth: d } = analysis.metadata;
   const night = lighting === "night" && sunHour === null;
-
-  const lamps = useMemo(() => {
-    const lh = analysis.metadata.wallHeight;
-    return analysis.rooms.slice(0, 8).map((r) => {
-      const cx = r.vertices.reduce((s, v) => s + v.x, 0) / r.vertices.length - w / 2;
-      const cz = r.vertices.reduce((s, v) => s + v.y, 0) / r.vertices.length - d / 2;
-      return { id: r.id, x: cx, y: Math.max(1.2, lh - 0.4), z: cz };
-    });
-  }, [analysis, w, d]);
 
   // Night window glow follows the tour lighting.
   useEffect(() => {
@@ -246,11 +244,7 @@ export default function TourMode(props: TourModeProps): React.JSX.Element {
           />
           <primitive object={group} />
           <InteractiveAnimator group={group} open={open} />
-          <EnvironmentDressing w={w} d={d} night={night} />
-          {night &&
-            lamps.map((l) => (
-              <pointLight key={l.id} position={[l.x, l.y, l.z]} intensity={10} distance={8} decay={2} color="#ffcf96" />
-            ))}
+          <EnvironmentDressing w={w} d={d} night={night} chimney={chimney} />
           <Grid
             position={[0, -0.21, 0]}
             args={[Math.max(w, d) * 4, Math.max(w, d) * 4]}

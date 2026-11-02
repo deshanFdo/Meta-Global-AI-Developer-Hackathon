@@ -244,6 +244,34 @@ function buildRug(g: THREE.Group, shape: "rect" | "round", color: string): { w: 
   return { w: 2.0, h: 0.03, d: 1.4 };
 }
 
+function buildFireplace(g: THREE.Group): { w: number; h: number; d: number } {
+  part(g, box(1.4, 1.05, 0.5), M("#8a4a3a", 0.9), 0, 0.55, 0); // brick surround
+  part(g, box(0.8, 0.6, 0.12), M("#14100c", 1), 0, 0.42, 0.22); // firebox opening
+  part(g, box(1.5, 0.08, 0.6), M(WOOD_DARK, 0.7), 0, 1.11, 0); // mantel
+  part(g, box(1.6, 0.06, 0.95), M("#9aa0ad", 0.9), 0, 0.03, 0.15); // hearth
+  const logMat = M("#3a2a1c", 1);
+  part(g, cyl(0.05, 0.05, 0.5, 8), logMat, -0.1, 0.2, 0.2, 0, 0, Math.PI / 2);
+  part(g, cyl(0.045, 0.045, 0.45, 8), logMat, 0.12, 0.26, 0.18, 0.2, 0, Math.PI / 2);
+  // Crossed flame planes (flicker animated by InteractiveAnimator).
+  const flameMat = new THREE.MeshBasicMaterial({
+    color: "#ff9a3c", transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const flameMat2 = new THREE.MeshBasicMaterial({
+    color: "#ffd76a", transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const f1 = part(g, new THREE.PlaneGeometry(0.34, 0.45), flameMat, -0.08, 0.48, 0.2);
+  f1.userData.flame = 0;
+  const f2 = part(g, new THREE.PlaneGeometry(0.3, 0.38), flameMat2, 0.1, 0.44, 0.22, 0, Math.PI / 2.4, 0);
+  f2.userData.flame = 2.1;
+  const f3 = part(g, new THREE.PlaneGeometry(0.22, 0.32), flameMat, 0.02, 0.42, 0.2, 0, -Math.PI / 2.6, 0);
+  f3.userData.flame = 4.2;
+  const glow = new THREE.PointLight("#ff9a4d", 5, 7, 2);
+  glow.position.set(0, 0.8, 0.7);
+  glow.userData.fireLight = 5;
+  g.add(glow);
+  return { w: 1.6, h: 1.15, d: 0.95 };
+}
+
 // ---------------------------------------------------------------------------
 // Public builder + nominal sizes + catalog
 // ---------------------------------------------------------------------------
@@ -286,6 +314,7 @@ export const FURNITURE_CATALOG: CatalogEntry[] = [
   { id: "rug-round", label: "Rug (round)", category: "Living", type: "rug", variant: "round", w: 2.0, d: 2.0, h: 0.03, color: "#5f7a6a" },
   { id: "floor-lamp", label: "Floor Lamp", category: "Living", type: "floor_lamp", w: 0.5, d: 0.5, h: 1.76, color: "#e8ddc8" },
   { id: "plant", label: "Plant", category: "Living", type: "plant", w: 0.55, d: 0.55, h: 0.95, color: "#4d7c4d" },
+  { id: "fireplace", label: "Fireplace", category: "Living", type: "fireplace", w: 1.6, d: 0.95, h: 1.15, color: "#8a4a3a" },
   { id: "bookshelf", label: "Bookshelf", category: "Living", type: "bookshelf", variant: "tall", w: 0.9, d: 0.32, h: 1.9, color: "#7a5a3c" },
   { id: "bed-single", label: "Single Bed", category: "Bedroom", type: "bed_single", w: 1.0, d: 2.0, h: 1.05, color: "#7a9cc6" },
   { id: "bed-double", label: "Double Bed", category: "Bedroom", type: "bed_double", w: 1.6, d: 2.1, h: 1.05, color: "#c67a8a" },
@@ -400,6 +429,9 @@ export function buildFurniture(type: FurnitureType, variant: string | undefined,
     case "rug":
       buildRug(g, variant === "round" ? "round" : "rect", c);
       break;
+    case "fireplace":
+      buildFireplace(g);
+      break;
     case "column": {
       part(g, box(0.34, 0.12, 0.34), M(CERAMIC, 0.8), 0, 0.06, 0);
       part(g, cyl(0.14, 0.16, 2.4, 14), M(c, 0.8), 0, 1.32, 0);
@@ -469,6 +501,8 @@ export function nominalSize(type: FurnitureType, variant?: string): { w: number;
       return { w: 0.5, h: 1.76, d: 0.5 };
     case "rug":
       return variant === "round" ? { w: 2.0, h: 0.03, d: 2.0 } : { w: 2.0, h: 0.03, d: 1.4 };
+    case "fireplace":
+      return { w: 1.6, h: 1.15, d: 0.95 };
     case "column":
       return { w: 0.4, h: 2.64, d: 0.4 };
     case "furnace":

@@ -30,10 +30,11 @@ interface Props {
   analysis: HouseAnalysis;
   textures: GeneratedTextures;
   open: OpenState;
+  lampsOff: Record<string, boolean>;
   onClose: () => void;
 }
 
-export default function ARModal({ analysis, textures, open, onClose }: Props): React.JSX.Element {
+export default function ARModal({ analysis, textures, open, lampsOff, onClose }: Props): React.JSX.Element {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tabletop, setTabletop] = useState(true);
@@ -71,6 +72,7 @@ export default function ARModal({ analysis, textures, open, onClose }: Props): R
           floorMap: await load(textures.floor),
           roofMap: await load(textures.roof),
           open,
+          lampsOff,
         });
         if (tabletop) group.scale.setScalar(0.08); // ~1.2 m tabletop model
         const blob = await groupToGLBBlob(group);
@@ -86,7 +88,7 @@ export default function ARModal({ analysis, textures, open, onClose }: Props): R
       alive = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [analysis, textures, open, tabletop]);
+  }, [analysis, textures, open, lampsOff, tabletop]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose} role="presentation">

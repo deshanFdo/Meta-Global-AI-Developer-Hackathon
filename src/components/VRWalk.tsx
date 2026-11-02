@@ -15,7 +15,9 @@ interface VRWalkProps {
   analysis: HouseAnalysis;
   textures: GeneratedTextures;
   open: OpenState;
+  lampsOff: Record<string, boolean>;
   onToggleOpen: (kind: "door" | "window", id: string) => void;
+  onToggleLamp: (roomId: string) => void;
   onPatch: (kind: ElementTag["kind"], id: string, patch: Record<string, unknown>) => void;
   onClose: () => void;
 }
@@ -34,12 +36,14 @@ interface SceneProps {
   analysis: HouseAnalysis;
   textures: GeneratedTextures;
   open: OpenState;
+  lampsOff: Record<string, boolean>;
   onToggleOpen: (kind: "door" | "window", id: string) => void;
+  onToggleLamp: (roomId: string) => void;
   onPatch: (kind: ElementTag["kind"], id: string, patch: Record<string, unknown>) => void;
   onGl: (gl: THREE.WebGLRenderer) => void;
 }
 
-function VRScene({ analysis, textures, open, onToggleOpen, onPatch, onGl }: SceneProps): React.JSX.Element {
+function VRScene({ analysis, textures, open, lampsOff, onToggleOpen, onToggleLamp, onPatch, onGl }: SceneProps): React.JSX.Element {
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
   const scene = useThree((s) => s.scene);
@@ -54,14 +58,15 @@ function VRScene({ analysis, textures, open, onToggleOpen, onPatch, onGl }: Scen
         floorMap: maps.floor ?? null,
         roofMap: maps.roof ?? null,
         open,
+        lampsOff,
       }),
-    [analysis, maps, open]
+    [analysis, maps, open, lampsOff]
   );
   useEffect(() => () => disposeGroup(group), [group]);
 
   const rig = useMemo(() => new THREE.Group(), []);
-  const live = useRef({ group, analysis, onPatch, onToggleOpen, open });
-  live.current = { group, analysis, onPatch, onToggleOpen, open };
+  const live = useRef({ group, analysis, onPatch, onToggleOpen, onToggleLamp, open });
+  live.current = { group, analysis, onPatch, onToggleOpen, onToggleLamp, open };
   const labelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -113,10 +118,10 @@ function VRScene({ analysis, textures, open, onToggleOpen, onPatch, onGl }: Scen
       }
     };
 
-    // Trigger: open/close doors and windows, rotate furniture, inspect walls and roof.
+    // Trigger: open/close doors and windows, switch lamps, rotate furniture, inspect walls and roof.
     const onTrigger = (controller: THREE.Group, tag: ElementTag, point: THREE.Vector3): void => {
       void controller;
-      const { analysis: a, onToggleOpen: toggle, onPatch: patch, open: openMap } = live.current;
+      const { analysis: a, onToggleOpen: toggle, onToggleLamp: lamp, onPatch: patch, open: openMap } = live.current;
       if (tag.kind === "door" || tag.kind === "window") {
         const style =
           tag.kind === "door"
@@ -131,6 +136,13 @@ function VRScene({ analysis, textures, open, onToggleOpen, onPatch, onGl }: Scen
         flash(`${tag.id} → ${willOpen ? "open" : "closed"}`, point);
       } else if (tag.kind === "roof") {
         flash(`roof · ${a.roof.type} · ${a.roof.pitch.toFixed(0)}° pitch`, point);
+      } else if (tag.kind === "lamp") {
+        lamp(tag.id);
+        const room = a.rooms.find((r) => r.id === tag.id);
+        flash(`${room?.name ?? "Lamp"} light toggled`, point);
+      } else if (tag.kind === "room") {
+        const room = a.rooms.find((r) => r.id === tag.id);
+        flash(`${room?.name ?? tag.id} · ${room?.area.toFixed(1) ?? ""} m²`, point);
       } else if (tag.kind === "furniture") {
         const current = (a.furniture ?? []).find((f) => f.id === tag.id)?.rotation ?? 0;
         const next = (current + 45) % 360;
@@ -172,6 +184,12 @@ function VRScene({ analysis, textures, open, onToggleOpen, onPatch, onGl }: Scen
           const next = nextIn(ROOF_ORDER, a.roof.type);
           patch("roof", "roof", { type: next });
           flash(`roof → ${next}`, hit.point);
+        } else if (tag.kind === "room") {
+          const palette = ["#ded7c8", "#c9a97a", "#8a9bb0", "#9ab08a", "#b08a8a", "#d7e6ee"];
+          const current = a.rooms.find((r) => r.id === tag.id)?.color ?? palette[0];
+          const next = nextIn(palette, palette.includes(current) ? current : palette[0]);
+          patch("room", tag.id, { color: next });
+          flash(`${tag.id} floor recolored`, hit.point);
         } else if (tag.kind === "furniture") {
           const item = (a.furniture ?? []).find((f) => f.id === tag.id);
           const options = item ? (VARIANT_OPTIONS[item.type] ?? []) : [];
@@ -247,23 +265,11 @@ function VRScene({ analysis, textures, open, onToggleOpen, onPatch, onGl }: Scen
     }
   });
 
-  const lamps = useMemo(() => {
-    const { overallWidth: w, overallDepth: d, wallHeight: h } = analysis.metadata;
-    return analysis.rooms.slice(0, 8).map((r) => {
-      const cx = r.vertices.reduce((s, v) => s + v.x, 0) / r.vertices.length - w / 2;
-      const cz = r.vertices.reduce((s, v) => s + v.y, 0) / r.vertices.length - d / 2;
-      return { id: r.id, x: cx, y: Math.max(1.2, h - 0.4), z: cz };
-    });
-  }, [analysis]);
-
   return (
     <>
       <color attach="background" args={["#0b0e16"]} />
       <hemisphereLight args={["#dfe8ff", "#3a3428", 0.9]} />
       <ambientLight intensity={0.45} />
-      {lamps.map((l) => (
-        <pointLight key={l.id} position={[l.x, l.y, l.z]} intensity={14} distance={9} decay={2} color="#ffe7c4" />
-      ))}
       <primitive object={group} />
       <InteractiveAnimator group={group} open={open} />
       {label && (
@@ -275,7 +281,7 @@ function VRScene({ analysis, textures, open, onToggleOpen, onPatch, onGl }: Scen
   );
 }
 
-export default function VRWalk({ analysis, textures, open, onToggleOpen, onPatch, onClose }: VRWalkProps): React.JSX.Element {
+export default function VRWalk({ analysis, textures, open, lampsOff, onToggleOpen, onToggleLamp, onPatch, onClose }: VRWalkProps): React.JSX.Element {
   const glRef = useRef<THREE.WebGLRenderer | null>(null);
   const sessionRef = useRef<XRSession | null>(null);
   const [support, setSupport] = useState<"checking" | "yes" | "no">("checking");
@@ -337,7 +343,9 @@ export default function VRWalk({ analysis, textures, open, onToggleOpen, onPatch
           analysis={analysis}
           textures={textures}
           open={open}
+          lampsOff={lampsOff}
           onToggleOpen={onToggleOpen}
+          onToggleLamp={onToggleLamp}
           onPatch={onPatch}
           onGl={(gl) => {
             glRef.current = gl;

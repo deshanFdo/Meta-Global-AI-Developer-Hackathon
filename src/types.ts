@@ -78,6 +78,8 @@ export interface Room {
   vertices: Point2D[];
   area: number;
   wallIds: string[];
+  /** Floor finish override (hex). Defaults to a tint by room type. */
+  color?: string;
 }
 
 export interface Roof {
@@ -121,6 +123,7 @@ export type FurnitureType =
   | "tv_unit"
   | "floor_lamp"
   | "rug"
+  | "fireplace"
   | "furnace"
   | "washing_machine"
   | "column";
