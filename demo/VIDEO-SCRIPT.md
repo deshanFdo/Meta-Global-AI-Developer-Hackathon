@@ -18,7 +18,7 @@ possible — cuts make judges suspect fakery. Narrate while doing (phone earbuds
 
 ### 0:15–0:50 — AI extraction (live proof)
 - Click Urban Loft sample (fast, no waiting) — OR upload a real plan if confident.
-- Scroll the 2D source-vs-reconstruction comparison slowly.
+  Film the scanning animation sweeping over the blueprint, then the house appearing.
 - Say: "Muse Spark reads walls, doors, windows, rooms and furniture into strict 3D data —
   then a second AI pass audits every item, and SAM independently verifies symbols on the plan."
 

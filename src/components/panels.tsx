@@ -6,6 +6,7 @@ import { estimateCost, type CostTier } from "@/lib/cost";
 import { SAM_CONCEPTS } from "@/lib/sam";
 import { deleteProject, listProjects, loadProject, saveProject } from "@/lib/project-store";
 import { FURNITURE_CATALOG, type CatalogEntry } from "@/lib/furnish";
+import SamOverlay from "./SamOverlay";
 import type { CameraPreset, LightingMode } from "./Viewer3D";
 
 // ---------------------------------------------------------------------------
@@ -554,6 +555,7 @@ export function VerifyTab({
   matches,
   spark,
   canRun,
+  displayImage,
 }: {
   concepts: string[];
   setConcepts: (v: string[]) => void;
@@ -562,6 +564,7 @@ export function VerifyTab({
   matches: SamMatch[];
   spark: SparkCounts;
   canRun: boolean;
+  displayImage: string | null;
 }): React.JSX.Element {
   const toggleConcept = (c: string): void => {
     setConcepts(concepts.includes(c) ? concepts.filter((x) => x !== c) : [...concepts, c]);
@@ -600,6 +603,7 @@ export function VerifyTab({
       {!canRun && (
         <p className="text-[11px] text-[var(--muted)]">SAM verification needs META_API_KEY on the server.</p>
       )}
+      <SamOverlay image={displayImage} matches={matches} />
       {matches.length > 0 && (
         <table className="w-full text-xs">
           <thead>

@@ -67,6 +67,24 @@ input, select, textarea {
   color-scheme: dark;
 }
 
+/* Analysis scan-line sweep over the source blueprint. */
+@keyframes scan-y {
+  0% { top: 0%; }
+  50% { top: 100%; }
+  100% { top: 0%; }
+}
+.scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  margin-top: -1px;
+  background: linear-gradient(90deg, transparent, #4f7cff 20%, #9db8ff 50%, #4f7cff 80%, transparent);
+  box-shadow: 0 0 24px 4px rgba(79, 124, 255, 0.55);
+  animation: scan-y 2.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
 /* Thin scrollbars for panels */
 *::-webkit-scrollbar {
   width: 8px;

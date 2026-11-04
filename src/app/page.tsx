@@ -11,7 +11,7 @@ import { clearAutosave, loadAutosave, saveAutosave } from "@/lib/project-store";
 import { VARIANT_OPTIONS, type CatalogEntry } from "@/lib/furnish";
 import { splitWallsAtJunctions } from "@/lib/walls";
 import UploadCard, { type ArchetypeKind } from "@/components/UploadCard";
-import PlanCompare from "@/components/PlanCompare";
+import ScanOverlay from "@/components/ScanOverlay";
 import { AskTab, BuildTab, ExportTab, LookTab, PlanTab, VerifyTab, type QaMessage, type SparkCounts } from "@/components/panels";
 import CustomizePanel, { DOOR_MATS, DOOR_STYLES, ROOF_MATS, ROOF_TYPES, WALL_MATS, WIN_MATS, WIN_STYLES } from "@/components/CustomizePanel";
 import type { CameraPreset, LightingMode } from "@/components/Viewer3D";
@@ -1213,6 +1213,7 @@ export default function Home(): React.JSX.Element {
                   matches={matches}
                   spark={sparkCounts}
                   canRun={apiLive === true}
+                  displayImage={displayImage}
                 />
               )}
               {tab === "export" && (
@@ -1240,7 +1241,7 @@ export default function Home(): React.JSX.Element {
         </aside>
 
         <main className="flex min-w-0 flex-col gap-4 lg:min-h-0 lg:overflow-y-auto">
-          <div id="orbit-view" className="relative h-[440px] overflow-hidden rounded-xl border border-[var(--border)] bg-[#0c0e14] lg:h-[520px]">
+          <div id="orbit-view" className="relative min-h-[440px] flex-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[#0c0e14]">
             {analysis ? (
               <Viewer3D
                 analysis={analysis}
@@ -1299,8 +1300,10 @@ export default function Home(): React.JSX.Element {
                 </button>
               </div>
             )}
+            {busy && displayImage && busyElapsed >= 1 && (
+              <ScanOverlay image={displayImage} deep={busy.deep} elapsed={busyElapsed} />
+            )}
           </div>
-          <PlanCompare displayImage={displayImage} analysis={analysis} matches={matches} />
         </main>
       </div>
 
