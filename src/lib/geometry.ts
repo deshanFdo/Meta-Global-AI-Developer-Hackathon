@@ -223,21 +223,6 @@ export function buildHouseGroup(analysis: HouseAnalysis, opts: GeometryOptions):
     }
   }
 
-  // ---- chimney, rooted through the actual roof surface (smoke anchor in dressing) ----
-  {
-    const base = chimneyBase(analysis);
-    const surfY = roofSurfaceYAt(analysis, base.x, base.z);
-    const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.55, 2.6, 0.55), std("#7a4438", { roughness: 0.95 }));
-    chimney.position.set(base.x, surfY + 0.7, base.z);
-    chimney.castShadow = true;
-    chimney.receiveShadow = true;
-    group.add(chimney);
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.1, 0.7), std("#4a4a4a", { roughness: 0.9 }));
-    cap.position.set(base.x, surfY + 2.02, base.z);
-    cap.castShadow = true;
-    group.add(cap);
-  }
-
   // ---- opening spans per wall ----
   const spans = new Map<string, OpeningSpan[]>();
   const pushSpan = (wall: Wall, kind: "door" | "window", ref: Door | PlanWindow, half: number, sill: number, top: number): void => {
@@ -710,38 +695,6 @@ function roomTint(type: string): string {
 }
 
 const NO_LAMP_TYPES = new Set(["terrace", "patio", "balcony", "porch"]);
-
-/** Roof surface height (world Y) at a world (x, z) — mirrors buildRoof math. */
-export function roofSurfaceYAt(analysis: HouseAnalysis, wx: number, wz: number): number {
-  const { overallWidth: w, overallDepth: d, wallHeight: h } = analysis.metadata;
-  const { type, pitch, overhang } = analysis.roof;
-  const ov = Math.max(0, Math.min(2, overhang || 0));
-  if (type === "flat") return h + 0.16;
-  if (type === "shed" || type === "butterfly") return h + 0.6;
-  const rise = Math.max(0.3, (Math.min(w, d) / 2) * Math.tan(((pitch || 25) * Math.PI) / 180));
-  if (type === "hip" || type === "mansard" || type === "gambrel") {
-    const fx = Math.min(1, Math.abs(wx) / (w / 2 + ov));
-    const fz = Math.min(1, Math.abs(wz) / (d / 2 + ov));
-    return h + rise * (1 - Math.max(fx, fz));
-  }
-  // Gable: ridge runs along the longer axis.
-  const alongX = w >= d;
-  const half = ((alongX ? w : d) + ov * 2) / 2;
-  const off = Math.min(1, Math.abs(alongX ? wx : wz) / half);
-  return h + rise * (1 - off);
-}
-
-/** Smoke-plume anchor: just above the chimney cap. */
-export function chimneyTopY(analysis: HouseAnalysis): number {
-  const base = chimneyBase(analysis);
-  return roofSurfaceYAt(analysis, base.x, base.z) + 2.1;
-}
-
-/** Chimney base position in world coords (plan 78% x 30%, clamped inside). */
-export function chimneyBase(analysis: HouseAnalysis): { x: number; z: number } {
-  const { overallWidth: w, overallDepth: d } = analysis.metadata;
-  return { x: Math.min(w / 2 - 1, Math.max(-w / 2 + 1, w * 0.28)), z: Math.min(d / 2 - 1, Math.max(-d / 2 + 1, -d * 0.2)) };
-}
 
 /** Dispose geometries/materials of a built group (textures are shared; caller owns them). */
 export function disposeGroup(group: THREE.Group): void {

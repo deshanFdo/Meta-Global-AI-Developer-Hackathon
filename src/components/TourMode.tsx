@@ -5,7 +5,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid } from "@react-three/drei";
 import * as THREE from "three";
 import type { GeneratedTextures, HouseAnalysis } from "@/types";
-import { buildHouseGroup, chimneyBase, chimneyTopY, disposeGroup, type OpenState } from "@/lib/geometry";
+import { buildHouseGroup, disposeGroup, type OpenState } from "@/lib/geometry";
 import { buildTour, type TourBeat } from "@/lib/tour";
 import { useTextureMaps } from "@/lib/useTextureMaps";
 import { doorSound, isMuted, setMuted } from "@/lib/sound";
@@ -98,11 +98,6 @@ export default function TourMode(props: TourModeProps): React.JSX.Element {
     [analysis, showRoofNow, maps, open, lampsOff]
   );
   useEffect(() => () => disposeGroup(group), [group]);
-
-  const chimney = useMemo(() => {
-    const base = chimneyBase(analysis);
-    return { x: base.x, z: base.z, y: chimneyTopY(analysis) };
-  }, [analysis]);
 
   const { overallWidth: w, overallDepth: d } = analysis.metadata;
   const night = lighting === "night" && sunHour === null;
@@ -309,7 +304,7 @@ export default function TourMode(props: TourModeProps): React.JSX.Element {
           />
           <primitive object={group} />
           <InteractiveAnimator group={group} open={open} />
-          <EnvironmentDressing w={w} d={d} night={night} chimney={chimney} />
+          <EnvironmentDressing w={w} d={d} night={night} />
           <Grid
             position={[0, -0.21, 0]}
             args={[Math.max(w, d) * 4, Math.max(w, d) * 4]}

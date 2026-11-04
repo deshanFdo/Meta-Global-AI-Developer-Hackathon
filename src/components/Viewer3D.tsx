@@ -5,7 +5,7 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber"
 import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import type { EditTool, GeneratedTextures, HouseAnalysis } from "@/types";
-import { buildHouseGroup, chimneyBase, chimneyTopY, disposeGroup, findTag, type ElementTag, type OpenState } from "@/lib/geometry";
+import { buildHouseGroup, disposeGroup, findTag, type ElementTag, type OpenState } from "@/lib/geometry";
 import { buildFurniture, nominalSize, type CatalogEntry } from "@/lib/furnish";
 import InteractiveAnimator from "./InteractiveAnimator";
 import SelectionHighlight from "./SelectionHighlight";
@@ -103,17 +103,15 @@ function seededRandom(seed: number): () => number {
   };
 }
 
-/** Ground, trees, drifting clouds, chimney smoke, birds, flowers and night stars. */
+/** Ground, trees, drifting clouds, birds, flowers and night stars around the house. */
 export function EnvironmentDressing({
   w,
   d,
   night,
-  chimney,
 }: {
   w: number;
   d: number;
   night: boolean;
-  chimney: { x: number; z: number; y: number } | null;
 }): React.JSX.Element {
   const clouds = useRef<THREE.Group>(null);
 
@@ -215,51 +213,7 @@ export function EnvironmentDressing({
       )}
       <Birds r={Math.max(w, d)} />
       <FlowerBed w={w} d={d} />
-      {chimney && <SmokePlume x={chimney.x} z={chimney.z} y={chimney.y} />}
     </>
-  );
-}
-
-function SmokePlume({ x, z, y }: { x: number; z: number; y: number }): React.JSX.Element {
-  const ref = useRef<THREE.Points>(null);
-  const data = useMemo(() => {
-    const count = 34;
-    const base = new Float32Array(count * 3);
-    const seed = new Float32Array(count * 2);
-    let s = 4242;
-    for (let i = 0; i < count; i += 1) {
-      s = (s * 1664525 + 1013904223) % 4294967296;
-      seed[i * 2] = s / 4294967296;
-      s = (s * 1664525 + 1013904223) % 4294967296;
-      seed[i * 2 + 1] = 0.5 + (s / 4294967296) * 0.5;
-    }
-    return { base, seed, count };
-  }, []);
-
-  useFrame(({ clock }) => {
-    const pts = ref.current;
-    if (!pts) return;
-    const pos = pts.geometry.getAttribute("position") as THREE.BufferAttribute;
-    const t = clock.elapsedTime;
-    for (let i = 0; i < data.count; i += 1) {
-      const age = (t * 0.12 * data.seed[i * 2 + 1] + data.seed[i * 2]) % 1;
-      pos.setXYZ(
-        i,
-        x + age * 2.4 + Math.sin(age * 6 + data.seed[i * 2] * 9) * 0.35 * age,
-        y + age * 4.5,
-        z + age * 0.9 + Math.cos(age * 5 + data.seed[i * 2] * 7) * 0.35 * age
-      );
-    }
-    pos.needsUpdate = true;
-  });
-
-  return (
-    <points ref={ref} frustumCulled={false}>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[data.base, 3]} />
-      </bufferGeometry>
-      <pointsMaterial size={0.55} color="#aab2c0" transparent opacity={0.3} depthWrite={false} sizeAttenuation />
-    </points>
   );
 }
 
@@ -445,11 +399,6 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
   }, [group, lighting]);
 
   const flight = useRef({ active: false });
-
-  const chimney = useMemo(() => {
-    const base = chimneyBase(analysis);
-    return { x: base.x, z: base.z, y: chimneyTopY(analysis) };
-  }, [analysis]);
 
   // ---- editor state (add / move / measure tools) ----
   const toPlan = useCallback(
@@ -806,7 +755,7 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
       )}
       <InteractiveAnimator group={group} open={open} />
       <SelectionHighlight group={group} selection={editTool === "select" ? selection : null} />
-      <EnvironmentDressing w={w} d={d} night={lighting === "night"} chimney={chimney} />
+      <EnvironmentDressing w={w} d={d} night={lighting === "night"} />
       {showLabels &&
         labels
           .filter((l) => l.area >= 6)
