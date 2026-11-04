@@ -1344,6 +1344,8 @@ export default function Home(): React.JSX.Element {
           onPatch={handlePatch}
           onDelete={handleDeleteElement}
           onDuplicate={handleDuplicate}
+          onUndo={undo}
+          onRedo={redo}
           onSetAllWallHeight={handleSetAllWallHeight}
           onNudge={handleNudgeElement}
           onClose={() => setWalkOpen(false)}

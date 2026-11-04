@@ -8,7 +8,7 @@ import type { GeneratedTextures, HouseAnalysis } from "@/types";
 import { buildHouseGroup, disposeGroup, findTag, isOpenable, type ElementTag, type OpenState } from "@/lib/geometry";
 import { resolveCollision, spawnPose } from "@/lib/collide";
 import { useTextureMaps } from "@/lib/useTextureMaps";
-import { footstep, isMuted, landThud, setMuted } from "@/lib/sound";
+import { footstep, isMuted, landThud, setMuted, uiClick } from "@/lib/sound";
 import CustomizePanel from "./CustomizePanel";
 import InteractiveAnimator from "./InteractiveAnimator";
 import SelectionHighlight from "./SelectionHighlight";
@@ -23,6 +23,8 @@ interface WalkModeProps {
   onPatch: (kind: ElementTag["kind"], id: string, patch: Record<string, unknown>) => void;
   onDelete: (kind: "wall" | "door" | "window" | "furniture" | "room", id: string) => void;
   onDuplicate: (kind: "wall" | "door" | "window" | "furniture", id: string) => void;
+  onUndo: () => void;
+  onRedo: () => void;
   onSetAllWallHeight: (h: number) => void;
   onNudge: (kind: "door" | "window", id: string, dir: 1 | -1) => void;
   onClose: () => void;
@@ -232,7 +234,7 @@ function TargetScanner({
 }
 
 export default function WalkMode(props: WalkModeProps): React.JSX.Element {
-  const { analysis, textures, open, lampsOff, onToggleOpen, onToggleLamp, onPatch, onDelete, onDuplicate, onSetAllWallHeight, onNudge, onClose } = props;
+  const { analysis, textures, open, lampsOff, onToggleOpen, onToggleLamp, onPatch, onDelete, onDuplicate, onUndo, onRedo, onSetAllWallHeight, onNudge, onClose } = props;
   const containerRef = useRef<HTMLDivElement>(null);
   const lockRef = useRef<{ lock: () => void } | null>(null);
   const [mode, setMode] = useState<InputMode>("menu");
@@ -243,6 +245,10 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
   const [isTouch] = useState(() => typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true);
   const targetRef = useRef<ElementTag | null>(null);
   targetRef.current = target;
+  const onUndoRef = useRef(onUndo);
+  onUndoRef.current = onUndo;
+  const onRedoRef = useRef(onRedo);
+  onRedoRef.current = onRedo;
   const selectionRef = useRef<ElementTag | null>(null);
   selectionRef.current = selection;
   const onDeleteRef = useRef(onDelete);
@@ -384,7 +390,13 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
       if (e.code === "KeyQ") exit();
       else if (e.code === "KeyF") toggleFullscreen();
       else if (e.code === "KeyM") toggleMute();
-      else if ((e.code === "Delete" || e.code === "Backspace") && selectionRef.current) {
+      else if ((e.ctrlKey || e.metaKey) && e.code === "KeyZ" && !e.shiftKey) {
+        e.preventDefault();
+        onUndoRef.current();
+      } else if ((e.ctrlKey && e.code === "KeyY") || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === "KeyZ")) {
+        e.preventDefault();
+        onRedoRef.current();
+      } else if ((e.code === "Delete" || e.code === "Backspace") && selectionRef.current) {
         const sel = selectionRef.current;
         if (sel.kind !== "roof" && sel.kind !== "lamp") {
           onDeleteRef.current(sel.kind, sel.id);
@@ -394,6 +406,13 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
         const t = targetRef.current;
         if (t && (t.kind === "door" || t.kind === "window")) onToggleOpen(t.kind, t.id);
         else if (t && t.kind === "lamp") onToggleLamp(t.id);
+      } else if (e.code === "KeyX" && mode === "walk") {
+        // Quick-delete whatever the crosshair targets (walls need the panel: cascade risk).
+        const t = targetRef.current;
+        if (t && (t.kind === "door" || t.kind === "window" || t.kind === "furniture")) {
+          onDeleteRef.current(t.kind, t.id);
+          uiClick();
+        }
       }
     };
     window.addEventListener("keydown", onKey);
@@ -426,6 +445,9 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
       const room = analysis.rooms.find((r) => r.id === tag.id);
       return `${room?.name ?? tag.id} · ${room?.area.toFixed(1) ?? ""} m² · click to customize`;
     }
+    if (tag.kind === "furniture") {
+      return `${tag.id} · X removes it instantly · click to customize`;
+    }
     return `${tag.id} · click to customize`;
   };
 
@@ -436,7 +458,7 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
   return (
     <div ref={containerRef} className="fixed inset-0 z-50 bg-black">
       <div className="absolute inset-0">
-        <Canvas shadows dpr={[1, 2]} camera={{ fov: 70, near: 0.05, far: 300, position: [spawn.x, EYE, spawn.z] }}>
+        <Canvas shadows dpr={[1, 2]} camera={{ fov: 70, near: 0.05, far: 300, position: [spawn.x, EYE, spawn.z], rotation: [0, spawn.yaw, 0] }}>
           <color attach="background" args={["#0b0e16"]} />
           <hemisphereLight args={["#dfe8ff", "#3a3428", 0.9]} />
           <ambientLight intensity={0.45} />
@@ -468,7 +490,7 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
             </div>
           )}
           <div className="pointer-events-none absolute bottom-3 left-1/2 z-40 w-max max-w-[94vw] -translate-x-1/2 rounded-lg bg-black/60 px-4 py-1.5 text-center text-[11px] text-white/85">
-            WASD walk · Space jump · mouse look · E open/close · click customize · Q back to orbit
+            WASD walk · Space jump · mouse look · E use · X delete aimed · click customize · Q back to orbit
           </div>
         </>
       )}

@@ -217,7 +217,9 @@ export function buildHouseGroup(analysis: HouseAnalysis, opts: GeometryOptions):
     tag(bulb, "lamp", room.id);
     group.add(bulb);
     if (on) {
-      const pt = new THREE.PointLight("#ffcf96", 9, 9, 2);
+      // Small local pool per room: strong nearby, ~zero a few meters out,
+      // so overlapping lamps can't wash the house white.
+      const pt = new THREE.PointLight("#ffcf96", 3.2, 6, 2);
       pt.position.set(lx, H - 1.0, lz);
       group.add(pt);
     }

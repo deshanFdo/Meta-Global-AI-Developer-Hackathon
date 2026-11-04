@@ -119,7 +119,7 @@ export function resolveCollision(
   return { x: px, z: pz };
 }
 
-/** Start pose: center of the largest room at eye height. */
+/** Start pose: center of the largest room, facing the nearest door. */
 export function spawnPose(analysis: HouseAnalysis): { x: number; z: number; yaw: number } {
   const { overallWidth: w, overallDepth: d } = analysis.metadata;
   let best = analysis.rooms[0];
@@ -129,5 +129,16 @@ export function spawnPose(analysis: HouseAnalysis): { x: number; z: number; yaw:
   if (!best || best.vertices.length === 0) return { x: 0, z: 0, yaw: 0 };
   const cx = best.vertices.reduce((s, v) => s + v.x, 0) / best.vertices.length - w / 2;
   const cz = best.vertices.reduce((s, v) => s + v.y, 0) / best.vertices.length - d / 2;
-  return { x: cx, z: cz, yaw: 0 };
+  let yaw = 0;
+  let bestDist = Infinity;
+  for (const door of analysis.doors) {
+    const dx = door.position.x - w / 2 - cx;
+    const dz = door.position.y - d / 2 - cz;
+    const dist = Math.hypot(dx, dz);
+    if (dist > 0.5 && dist < bestDist) {
+      bestDist = dist;
+      yaw = Math.atan2(-dx, -dz);
+    }
+  }
+  return { x: cx, z: cz, yaw };
 }
