@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid } from "@react-three/drei";
 import * as THREE from "three";
@@ -8,7 +8,7 @@ import type { GeneratedTextures, HouseAnalysis } from "@/types";
 import { buildHouseGroup, chimneyBase, chimneyTopY, disposeGroup, type OpenState } from "@/lib/geometry";
 import { buildTour, type TourBeat } from "@/lib/tour";
 import { useTextureMaps } from "@/lib/useTextureMaps";
-import { doorSound } from "@/lib/sound";
+import { doorSound, isMuted, setMuted } from "@/lib/sound";
 import InteractiveAnimator from "./InteractiveAnimator";
 import { EnvironmentDressing, LIGHTS, type LightingMode } from "./Viewer3D";
 
@@ -75,7 +75,10 @@ export default function TourMode(props: TourModeProps): React.JSX.Element {
   const [beatIndex, setBeatIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState(true);
+  const [mutedUi, setMutedUi] = useState(() => isMuted());
   const stateRef = useRef({ beat: 0, prog: 0 });
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioEndedRef = useRef(true);
   const maps = useTextureMaps(textures);
 
   // Restore the user's view settings on exit.
@@ -163,11 +166,69 @@ export default function TourMode(props: TourModeProps): React.JSX.Element {
     }
   };
 
+  const stopAudio = useCallback(() => {
+    const audio = audioRef.current;
+    audioRef.current = null;
+    if (audio) {
+      audio.pause();
+      audio.src = "";
+    }
+    audioEndedRef.current = true;
+  }, []);
+
+  const playBeatAudio = useCallback((index: number) => {
+    stopAudio();
+    const beat = beats[index];
+    if (!beat || isMuted()) return;
+    try {
+      const audio = new Audio(`/audio/${beat.clip}.mp3`);
+      audioRef.current = audio;
+      audioEndedRef.current = false;
+      audio.onended = () => {
+        audioEndedRef.current = true;
+      };
+      audio.onerror = () => {
+        audioEndedRef.current = true;
+      };
+      void audio.play().catch(() => {
+        audioEndedRef.current = true;
+      });
+    } catch {
+      audioEndedRef.current = true;
+    }
+  }, [beats, stopAudio]);
+
+  const toggleMute = useCallback(() => {
+    const next = !isMuted();
+    setMuted(next);
+    setMutedUi(next);
+    if (next) {
+      stopAudio();
+    } else {
+      playBeatAudio(stateRef.current.beat);
+    }
+  }, [playBeatAudio, stopAudio]);
+
   // Apply the opening beat once.
   useEffect(() => {
     applyBeat.current(0);
+    playBeatAudio(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Pause/resume follows the narration.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (playing) {
+      void audio.play().catch(() => undefined);
+    } else {
+      audio.pause();
+    }
+  }, [playing]);
+
+  // Stop narration on unmount.
+  useEffect(() => () => stopAudio(), [stopAudio]);
 
   useEffect(() => {
     if (!playing) return;
@@ -176,7 +237,8 @@ export default function TourMode(props: TourModeProps): React.JSX.Element {
       const beat = beats[s.beat];
       if (!beat) return;
       s.prog += 0.1 / beat.dur;
-      if (s.prog >= 1) {
+      // Advance when the beat time AND its narration are done (hard cap at 2x).
+      if (s.prog >= 1 && (audioEndedRef.current || s.prog >= 2)) {
         if (s.beat >= beats.length - 1) {
           s.prog = 1;
           setPlaying(false);
@@ -184,19 +246,21 @@ export default function TourMode(props: TourModeProps): React.JSX.Element {
           s.beat += 1;
           s.prog = 0;
           applyBeat.current(s.beat);
+          playBeatAudio(s.beat);
           setBeatIndex(s.beat);
         }
       }
       setProgress(s.prog);
       const current = beats[s.beat];
       if (current?.sunFrom !== undefined && current.sunTo !== undefined) {
-        onSunHour(current.sunFrom + (current.sunTo - current.sunFrom) * easeInOut(s.prog));
+        onSunHour(current.sunFrom + (current.sunTo - current.sunFrom) * easeInOut(Math.min(s.prog, 1)));
       }
     }, 100);
     return () => clearInterval(timer);
-  }, [playing, beats, onSunHour]);
+  }, [playing, beats, onSunHour, playBeatAudio]);
 
   const exit = (restore: boolean): void => {
+    stopAudio();
     if (restore) {
       props.onShowRoof(initial.current.showRoof);
       onLighting(initial.current.lighting);
@@ -211,6 +275,7 @@ export default function TourMode(props: TourModeProps): React.JSX.Element {
     s.beat += 1;
     s.prog = 0;
     applyBeat.current(s.beat);
+    playBeatAudio(s.beat);
     setBeatIndex(s.beat);
     setProgress(0);
   };
@@ -268,13 +333,22 @@ export default function TourMode(props: TourModeProps): React.JSX.Element {
         <div className="rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white">
           Demo tour · {Math.floor(elapsed)}s / {Math.floor(total)}s · press Win+G to record this
         </div>
-        <button
-          type="button"
-          onClick={() => exit(true)}
-          className="rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white hover:bg-black/80"
-        >
-          Exit tour
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={toggleMute}
+            className="rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white hover:bg-black/80"
+          >
+            {mutedUi ? "Unmute voice" : "Mute voice"}
+          </button>
+          <button
+            type="button"
+            onClick={() => exit(true)}
+            className="rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white hover:bg-black/80"
+          >
+            Exit tour
+          </button>
+        </div>
       </div>
 
       <div className="absolute bottom-10 left-0 right-0 z-50 flex justify-center p-4">

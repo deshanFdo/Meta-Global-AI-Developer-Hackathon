@@ -11,6 +11,8 @@ export interface TourBeat {
   dur: number; // seconds
   camPos: [number, number, number];
   camTgt: [number, number, number];
+  /** Narration clip id in /audio (without extension). */
+  clip: string;
   roof?: boolean;
   lighting?: LightingMode;
   sunFrom?: number;
@@ -55,6 +57,7 @@ export function buildTour(analysis: HouseAnalysis): TourBeat[] {
       dur: 8,
       camPos: wide.pos,
       camTgt: wide.tgt,
+      clip: "tour-establishing",
       roof: true,
       lighting: "day",
     },
@@ -64,6 +67,7 @@ export function buildTour(analysis: HouseAnalysis): TourBeat[] {
       dur: 6,
       camPos: [r * 0.5, r * 0.9 + 3, r * 0.5 + d * 0.3],
       camTgt: [0, 0.3, 0],
+      clip: "tour-roof",
       roof: false,
     },
   ];
@@ -88,6 +92,7 @@ export function buildTour(analysis: HouseAnalysis): TourBeat[] {
       dur: 7,
       camPos: [cx + Math.cos(angle) * dist, 6.5, cz + Math.sin(angle) * dist],
       camTgt: [cx, 0.4, cz],
+      clip: `tour-room-${(i % 5) + 1}`,
       roof: false,
       openDoors: doors,
       openWindows: windows,
@@ -101,6 +106,7 @@ export function buildTour(analysis: HouseAnalysis): TourBeat[] {
       dur: 9,
       camPos: wide.pos,
       camTgt: wide.tgt,
+      clip: "tour-sun",
       roof: true,
       sunFrom: 8,
       sunTo: 18,
@@ -111,6 +117,7 @@ export function buildTour(analysis: HouseAnalysis): TourBeat[] {
       dur: 7,
       camPos: [r * 0.7, r * 0.5 + 3, r * 0.7 + d * 0.3],
       camTgt: [0, 0.8, 0],
+      clip: "tour-night",
       lighting: "night",
     },
     {
@@ -119,6 +126,7 @@ export function buildTour(analysis: HouseAnalysis): TourBeat[] {
       dur: 7,
       camPos: wide.pos,
       camTgt: wide.tgt,
+      clip: "tour-finale",
       lighting: "day",
       roof: true,
     }

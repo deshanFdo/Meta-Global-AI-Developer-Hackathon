@@ -318,6 +318,51 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
     }
   };
 
+  // Walkthrough voiceover (walk-1 then walk-2) for hands-free recorded demos.
+  const [narrating, setNarrating] = useState(false);
+  const narrationRef = useRef<HTMLAudioElement | null>(null);
+
+  const stopNarration = useCallback(() => {
+    const audio = narrationRef.current;
+    narrationRef.current = null;
+    if (audio) {
+      audio.pause();
+      audio.src = "";
+    }
+    setNarrating(false);
+  }, []);
+
+  const startNarration = useCallback(() => {
+    stopNarration();
+    if (isMuted()) return;
+    const fail = (): void => {
+      narrationRef.current = null;
+      setNarrating(false);
+    };
+    try {
+      const first = new Audio("/audio/walk-1.mp3");
+      narrationRef.current = first;
+      setNarrating(true);
+      first.onended = () => {
+        try {
+          const second = new Audio("/audio/walk-2.mp3");
+          narrationRef.current = second;
+          second.onended = fail;
+          second.onerror = fail;
+          void second.play().catch(fail);
+        } catch {
+          fail();
+        }
+      };
+      first.onerror = fail;
+      void first.play().catch(fail);
+    } catch {
+      fail();
+    }
+  }, [stopNarration]);
+
+  useEffect(() => () => stopNarration(), [stopNarration]);
+
   const unlock = (): void => {
     if (document.pointerLockElement) document.exitPointerLock();
   };
@@ -333,6 +378,7 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
   };
 
   const exit = (): void => {
+    stopNarration();
     if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
     unlock();
     onClose();
@@ -443,6 +489,9 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
           {selection ? ` · customizing ${selection.kind} ${selection.id}` : ""}
         </div>
         <div className="flex gap-2">
+          <button type="button" onClick={narrating ? stopNarration : startNarration} className="rounded-lg bg-blue-700/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">
+            {narrating ? "Stop narration" : "Narrate walk"}
+          </button>
           <button type="button" onClick={toggleMute} className="rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white hover:bg-black/80">
             {mutedUi ? "Unmute (M)" : "Mute (M)"}
           </button>
