@@ -1,5 +1,45 @@
 # ChatGPT demo-video pack (for the X teaser, NOT the judging video)
 
+## ONE-SHOT MODE (use this — single generation, 720p to save tokens)
+
+Paste everything below as ONE prompt. Four simple acts, no complex transitions,
+nothing the model can garble. Settings: 720p, 16:9, highest quality, ~60–75 seconds.
+
+---
+> Create a 70-second teaser trailer, dark premium tech aesthetic, cinematic 3D
+> architectural visualization, smooth slow camera throughout, shallow depth of
+> field, no people, no readable text anywhere.
+>
+> ACT 1 (0–12s): Top-down close-up of an architectural floor-plan blueprint on a
+> dark desk. Thin blue light traces the drawn walls until the plan glows, then
+> the walls fold upward into a miniature 3D house. Slow push-in.
+>
+> ACT 2 (12–35s): Slow orbit around a modern single-story villa 3D model at
+> dusk. The dark roof lifts off and hovers. Warm lamps glow inside every room.
+> Two glass doors swing open by themselves.
+>
+> ACT 3 (35–52s): Time-lapse over the villa: long morning shadows sweep across
+> the rooms, sky warms golden, then night falls and every window ignites warm
+> from within. Slow wide arc, camera never stops moving.
+>
+> ACT 4 (52–70s): Smooth first-person glide through an open doorway into a cozy
+> living room with a flickering fireplace. Cut to a phone on a desk projecting
+> the tiny house as a hologram. Fade to black.
+>
+> Strict rules: photorealistic 3D render look, consistent dark-blue and amber
+> palette across all acts, no humans, no hands, no text, no logos, no flicker,
+> no morphing geometry mid-shot.
+---
+
+If the output has one weak act, accept it anyway — trim that act in CapCut and
+let the other three carry the video. Do NOT burn the one shot regenerating.
+
+---
+
+## Multi-shot mode (only if you get more generations)
+
+Below is the original 6-scene pack. Ignore it unless the one-shot above fails badly.
+
 ChatGPT/Sora cannot access this project, so it cannot screen-record the real app.
 Use this pack to generate a 60–90s AI-animated TEASER for X virality. The official
 submission video must remain the real recording (see VIDEO-SCRIPT.md + NARRATION.md).
