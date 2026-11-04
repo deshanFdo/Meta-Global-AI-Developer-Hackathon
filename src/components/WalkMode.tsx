@@ -318,7 +318,8 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
     }
   };
 
-  // Walkthrough voiceover (walk-1 then walk-2) for hands-free recorded demos.
+  // Walkthrough voiceover (walk-1) for hands-free recorded demos. The walk-2 closer
+  // is played manually from public/audio over the build/AR montage (see NARRATION.md).
   const [narrating, setNarrating] = useState(false);
   const narrationRef = useRef<HTMLAudioElement | null>(null);
 
@@ -340,22 +341,12 @@ export default function WalkMode(props: WalkModeProps): React.JSX.Element {
       setNarrating(false);
     };
     try {
-      const first = new Audio("/audio/walk-1.mp3");
-      narrationRef.current = first;
+      const clip = new Audio("/audio/walk-1.mp3");
+      narrationRef.current = clip;
       setNarrating(true);
-      first.onended = () => {
-        try {
-          const second = new Audio("/audio/walk-2.mp3");
-          narrationRef.current = second;
-          second.onended = fail;
-          second.onerror = fail;
-          void second.play().catch(fail);
-        } catch {
-          fail();
-        }
-      };
-      first.onerror = fail;
-      void first.play().catch(fail);
+      clip.onended = fail;
+      clip.onerror = fail;
+      void clip.play().catch(fail);
     } catch {
       fail();
     }

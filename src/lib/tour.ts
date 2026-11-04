@@ -54,7 +54,7 @@ export function buildTour(analysis: HouseAnalysis): TourBeat[] {
     {
       caption: `${analysis.metadata.style} — from paper plan to living house`,
       sub: "AI-extracted by Muse Spark, verified by a second pass",
-      dur: 8,
+      dur: 10,
       camPos: wide.pos,
       camTgt: wide.tgt,
       clip: "tour-establishing",
@@ -64,7 +64,7 @@ export function buildTour(analysis: HouseAnalysis): TourBeat[] {
     {
       caption: "Lift the roof to see every room",
       sub: `${analysis.rooms.length} rooms · ${analysis.doors.length} doors · ${analysis.windows.length} windows`,
-      dur: 6,
+      dur: 7,
       camPos: [r * 0.5, r * 0.9 + 3, r * 0.5 + d * 0.3],
       camTgt: [0, 0.3, 0],
       clip: "tour-roof",
@@ -89,7 +89,7 @@ export function buildTour(analysis: HouseAnalysis): TourBeat[] {
     beats.push({
       caption: `${room.name} — ${room.area.toFixed(1)} m²`,
       sub: "Doors and windows open on their own · click anything to customize it",
-      dur: 7,
+      dur: 8,
       camPos: [cx + Math.cos(angle) * dist, 6.5, cz + Math.sin(angle) * dist],
       camTgt: [cx, 0.4, cz],
       clip: `tour-room-${(i % 5) + 1}`,
@@ -101,9 +101,18 @@ export function buildTour(analysis: HouseAnalysis): TourBeat[] {
 
   beats.push(
     {
+      caption: "A real editor, not a render",
+      sub: "Drag walls · draw rooms · furnish everything · undo it all",
+      dur: 9,
+      camPos: [r * 0.6, r * 0.7 + 3, r * 0.6 + d * 0.3],
+      camTgt: [0, 0.4, 0],
+      clip: "tour-build",
+      roof: false,
+    },
+    {
       caption: "Full sun control, 6 AM to 8 PM",
       sub: "Watch the shadows sweep the house",
-      dur: 9,
+      dur: 10,
       camPos: wide.pos,
       camTgt: wide.tgt,
       clip: "tour-sun",
@@ -114,7 +123,7 @@ export function buildTour(analysis: HouseAnalysis): TourBeat[] {
     {
       caption: "And after dark",
       sub: "Warm interiors glow through every window",
-      dur: 7,
+      dur: 8,
       camPos: [r * 0.7, r * 0.5 + 3, r * 0.7 + d * 0.3],
       camTgt: [0, 0.8, 0],
       clip: "tour-night",
@@ -123,7 +132,7 @@ export function buildTour(analysis: HouseAnalysis): TourBeat[] {
     {
       caption: "Now walk it yourself",
       sub: "First person, AR, VR — then export to GLB, DXF and CSV",
-      dur: 7,
+      dur: 8,
       camPos: wide.pos,
       camTgt: wide.tgt,
       clip: "tour-finale",
