@@ -99,6 +99,7 @@ export function resolveCollision(
     }
     for (const item of analysis.furniture ?? []) {
       if (item.type === "rug") continue; // flat: walkable
+      if ((item.baseY ?? 0) > 0.4) continue; // elevated: sitting on something
       const fx = toX(item.position.x);
       const fz = toZ(item.position.y);
       const fr = Math.max(0.15, Math.min(item.width, item.depth) / 2);

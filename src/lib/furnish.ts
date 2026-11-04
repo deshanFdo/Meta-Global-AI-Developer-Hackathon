@@ -225,6 +225,29 @@ function buildPlant(g: THREE.Group): { w: number; h: number; d: number } {
   return { w: 0.55, h: 0.95, d: 0.55 };
 }
 
+function buildVase(g: THREE.Group): { w: number; h: number; d: number } {
+  part(g, cyl(0.07, 0.1, 0.24, 14), M("#7a9cc6", 0.4), 0, 0.12, 0);
+  part(g, cyl(0.035, 0.035, 0.1, 8), M("#5d7fa3", 0.4), 0, 0.28, 0);
+  const stems: Array<[number, number, number, string]> = [
+    [-0.05, 0.5, 0.02, "#c65b7a"],
+    [0.05, 0.55, -0.02, "#e8b83c"],
+    [0.0, 0.6, 0.04, "#e8e6e1"],
+  ];
+  for (const [sx, sy, sz, color] of stems) {
+    part(g, cyl(0.006, 0.006, 0.3, 6), M("#3f7a4d", 0.9), sx / 2, 0.4, sz / 2);
+    part(g, sph(0.045), M(color, 0.8), sx, sy, sz);
+  }
+  return { w: 0.2, h: 0.65, d: 0.2 };
+}
+
+function buildTableLamp(g: THREE.Group, color: string): { w: number; h: number; d: number } {
+  part(g, cyl(0.11, 0.13, 0.04, 14), M(DARK, 0.5), 0, 0.02, 0);
+  part(g, cyl(0.018, 0.018, 0.32, 8), M(DARK, 0.5), 0, 0.2, 0);
+  part(g, cyl(0.13, 0.17, 0.2, 14), M(color, 0.9), 0, 0.44, 0);
+  part(g, sph(0.045), M("#ffe2b0", 0.4, { emissive: "#ffcf96", emissiveIntensity: 1.8 }), 0, 0.4, 0);
+  return { w: 0.34, h: 0.56, d: 0.34 };
+}
+
 function buildFloorLamp(g: THREE.Group, color: string): { w: number; h: number; d: number } {
   part(g, cyl(0.16, 0.18, 0.04, 16), M(DARK, 0.5), 0, 0.02, 0);
   part(g, cyl(0.02, 0.02, 1.5, 8), M(DARK, 0.5), 0, 0.79, 0);
@@ -314,6 +337,8 @@ export const FURNITURE_CATALOG: CatalogEntry[] = [
   { id: "rug-round", label: "Rug (round)", category: "Living", type: "rug", variant: "round", w: 2.0, d: 2.0, h: 0.03, color: "#5f7a6a" },
   { id: "floor-lamp", label: "Floor Lamp", category: "Living", type: "floor_lamp", w: 0.5, d: 0.5, h: 1.76, color: "#e8ddc8" },
   { id: "plant", label: "Plant", category: "Living", type: "plant", w: 0.55, d: 0.55, h: 0.95, color: "#4d7c4d" },
+  { id: "vase", label: "Flower Vase", category: "Decor", type: "vase", w: 0.2, d: 0.2, h: 0.65, color: "#7a9cc6" },
+  { id: "table-lamp", label: "Table Lamp", category: "Decor", type: "table_lamp", w: 0.34, d: 0.34, h: 0.56, color: "#e8ddc8" },
   { id: "fireplace", label: "Fireplace", category: "Living", type: "fireplace", w: 1.6, d: 0.95, h: 1.15, color: "#8a4a3a" },
   { id: "bookshelf", label: "Bookshelf", category: "Living", type: "bookshelf", variant: "tall", w: 0.9, d: 0.32, h: 1.9, color: "#7a5a3c" },
   { id: "bed-single", label: "Single Bed", category: "Bedroom", type: "bed_single", w: 1.0, d: 2.0, h: 1.05, color: "#7a9cc6" },
@@ -423,6 +448,12 @@ export function buildFurniture(type: FurnitureType, variant: string | undefined,
     case "plant":
       buildPlant(g);
       break;
+    case "vase":
+      buildVase(g);
+      break;
+    case "table_lamp":
+      buildTableLamp(g, c);
+      break;
     case "floor_lamp":
       buildFloorLamp(g, c);
       break;
@@ -497,6 +528,10 @@ export function nominalSize(type: FurnitureType, variant?: string): { w: number;
       return { w: 1.6, h: 1.38, d: 0.42 };
     case "plant":
       return { w: 0.55, h: 0.95, d: 0.55 };
+    case "vase":
+      return { w: 0.2, h: 0.65, d: 0.2 };
+    case "table_lamp":
+      return { w: 0.34, h: 0.56, d: 0.34 };
     case "floor_lamp":
       return { w: 0.5, h: 1.76, d: 0.5 };
     case "rug":

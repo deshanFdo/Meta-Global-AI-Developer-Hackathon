@@ -18,7 +18,7 @@ const TOOLS: Array<{ id: EditTool; label: string; hint: string }> = [
   { id: "add-wall", label: "Add wall", hint: "Click two floor points. Snaps to grid, 15° angles and existing endpoints." },
   { id: "add-door", label: "Add door", hint: "Click a wall where the door should go." },
   { id: "add-window", label: "Add window", hint: "Click a wall where the window should go." },
-  { id: "add-furniture", label: "Add decor", hint: "Pick a piece below, then click the floor. R rotates." },
+  { id: "add-furniture", label: "Furniture", hint: "Pick a piece, click the floor — or on top of tables. R rotates." },
   { id: "measure", label: "Measure", hint: "Click two points for the distance. Right-click clears." },
 ];
 

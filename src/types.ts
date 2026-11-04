@@ -122,6 +122,8 @@ export type FurnitureType =
   | "plant"
   | "tv_unit"
   | "floor_lamp"
+  | "table_lamp"
+  | "vase"
   | "rug"
   | "fireplace"
   | "furnace"
@@ -136,6 +138,8 @@ export interface FurnitureItem {
   width: number;
   depth: number;
   height: number;
+  /** Base height above the floor in meters — lets small items sit on tables. */
+  baseY?: number;
   /** Builder variant, e.g. sofa "2-seat" | "3-seat". */
   variant?: string;
   roomId?: string;

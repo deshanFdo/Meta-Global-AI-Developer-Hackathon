@@ -39,8 +39,9 @@ npm run build
 
 - Build tab: select / move / add-wall / add-door / add-window / add-decor / measure tools, undo + redo
   (Ctrl+Z/Y), element lists with delete. New walls snap to grid, 15° angles and existing endpoints.
-- Furniture catalog (29 pieces incl. fireplace): sofas (2/3-seat), beds, dining sets, bath, office and
-  decor. Click to place with a live ghost preview (R rotates), then drag, recolor, resize or swap variants.
+- Furniture catalog (31 pieces incl. fireplace, vase, table lamp): sofas (2/3-seat), beds, dining sets,
+  bath, office and decor. Click to place with a live ghost preview (R rotates) — on floors or on top of
+  tables; then drag, lift, recolor, resize or swap variants.
 - Everything is editable: wall geometry, height and thickness, all opening styles and dimensions, roof shape
   and finishes, room floors, working light switches, duplicate-anything (Ctrl+D).
 - Start from a blank canvas to design from scratch, or from AI extraction.

@@ -629,6 +629,7 @@ export default function Home(): React.JSX.Element {
               width: clampNum(patch.width, f.width, 0.15, 6),
               depth: clampNum(patch.depth, f.depth, 0.15, 6),
               height: clampNum(patch.height, f.height, 0.02, 3),
+              baseY: clampNum(patch.baseY, f.baseY ?? 0, 0, 2.5),
             };
           }),
         };
@@ -867,8 +868,9 @@ export default function Home(): React.JSX.Element {
     setEdited(true);
   }, []);
 
-  const handleAddFurniture = useCallback((entry: CatalogEntry, at: { x: number; y: number }, rotation: number) => {
+  const handleAddFurniture = useCallback((entry: CatalogEntry, at: { x: number; y: number }, rotation: number, baseY = 0) => {
     if (!FURNITURE_TYPES.includes(entry.type)) return;
+    const lift = Number.isFinite(baseY) ? Math.max(0, Math.min(2.5, baseY)) : 0;
     commit((prev) => ({
       ...prev,
       furniture: [
@@ -882,6 +884,7 @@ export default function Home(): React.JSX.Element {
           width: entry.w,
           depth: entry.d,
           height: entry.h,
+          baseY: lift,
           color: entry.color,
         },
       ],

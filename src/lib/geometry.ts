@@ -337,7 +337,7 @@ export function buildHouseGroup(analysis: HouseAnalysis, opts: GeometryOptions):
   // ---- furniture (builders are true-scale; scaling is relative) ----
   for (const item of analysis.furniture ?? []) {
     const g = buildFurniture(item.type, item.variant, item.color);
-    g.position.set(toX(item.position.x), 0, toZ(item.position.y));
+    g.position.set(toX(item.position.x), item.baseY ?? 0, toZ(item.position.y));
     g.rotation.y = (item.rotation * Math.PI) / 180;
     tag(g, "furniture", item.id);
     const nom = nominalSize(item.type, item.variant);

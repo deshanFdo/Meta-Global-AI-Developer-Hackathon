@@ -31,7 +31,7 @@ interface ViewerProps {
   onMoveWall: (id: string, dx: number, dy: number) => void;
   onMoveFurniture: (id: string, dx: number, dy: number) => void;
   onCheckpoint: () => void;
-  onAddFurniture: (entry: CatalogEntry, at: { x: number; y: number }, rotation: number) => void;
+  onAddFurniture: (entry: CatalogEntry, at: { x: number; y: number }, rotation: number, baseY: number) => void;
   onCancelTool: () => void;
   pendingFurniture: CatalogEntry | null;
   sunHour: number | null;
@@ -462,6 +462,7 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
   const hoverRef = useRef<{ x: number; y: number } | null>(null);
   const [measurePts, setMeasurePts] = useState<Array<{ x: number; z: number }>>([]);
   const [pendingRot, setPendingRot] = useState(0);
+  const [hoverH, setHoverH] = useState(0);
   const dragRef = useRef<{ kind: "wall" | "furniture"; id: string; bx: number; bz: number; ldx: number; ldy: number } | null>(null);
   const editToolRef = useRef(editTool);
   editToolRef.current = editTool;
@@ -472,6 +473,7 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
   useEffect(() => {
     setPendingStart(null);
     setHoverPlan(null);
+    setHoverH(0);
     setMeasurePts([]);
     setPendingRot(0);
     dragRef.current = null;
@@ -560,6 +562,21 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
   const floorTool = editTool === "add-wall" || editTool === "move" || editTool === "measure" || editTool === "add-furniture";
 
   const rubberEnd = pendingStart && hoverPlan ? magnetize(snapWallEnd(pendingStart, hoverPlan)) : null;
+
+  const surfCaster = useMemo(() => new THREE.Raycaster(), []);
+
+  /** Nearest real surface under the pointer (table tops, floors) for stacking placement. */
+  const surfacePoint = useCallback((e: ThreeEvent<PointerEvent | MouseEvent>): { x: number; y: number; h: number } => {
+    surfCaster.ray.copy(e.ray);
+    const hits = surfCaster.intersectObjects(group.children, true);
+    const p = hits.length > 0 ? hits[0].point : e.point;
+    const plan = toPlan(p.x, p.z);
+    return {
+      x: snapQ(plan.x),
+      y: snapQ(plan.y),
+      h: Math.max(0, Math.min(2.5, Math.round(p.y / 0.05) * 0.05)),
+    };
+  }, [group, toPlan, surfCaster]);
 
   // ---- sun: explicit hour overrides the lighting preset ----
   const sun = useMemo(() => {
@@ -666,7 +683,10 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
                 setPendingStart(null);
               }
             } else if (editTool === "add-furniture") {
-              if (pendingFurniture) onAddFurniture(pendingFurniture, snapped, pendingRot);
+              if (pendingFurniture) {
+                const s = surfacePoint(e);
+                onAddFurniture(pendingFurniture, { x: s.x, y: s.y }, pendingRot, s.h);
+              }
             } else if (editTool === "measure") {
               const wpt = { x: e.point.x, z: e.point.z };
               setMeasurePts((prev) => (prev.length >= 2 ? [wpt] : [...prev, wpt]));
@@ -677,6 +697,9 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
             const snapped = { x: snapQ(p.x), y: snapQ(p.y) };
             hoverRef.current = snapped;
             setHoverPlan(snapped);
+            if (editTool === "add-furniture") {
+              setHoverH(surfacePoint(e).h);
+            }
             const drag = dragRef.current;
             if (drag && editTool === "move") {
               const dx = e.point.x - drag.bx;
@@ -755,16 +778,16 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
         <>
           <primitive
             object={ghost}
-            position={[hoverPlan.x - w / 2, 0, hoverPlan.y - d / 2]}
+            position={[hoverPlan.x - w / 2, hoverH, hoverPlan.y - d / 2]}
             rotation={[0, (pendingRot * Math.PI) / 180, 0]}
           />
           <Html
-            position={[hoverPlan.x - w / 2, 1.6, hoverPlan.y - d / 2]}
+            position={[hoverPlan.x - w / 2, hoverH + 1.6, hoverPlan.y - d / 2]}
             center
             distanceFactor={22}
             style={{ pointerEvents: "none" }}
           >
-            <div style={dimStyle}>{pendingFurniture?.label} · R rotates</div>
+            <div style={dimStyle}>{pendingFurniture?.label} · R rotates{hoverH > 0.05 ? ` · ${hoverH.toFixed(2)} m up` : ""}</div>
           </Html>
         </>
       )}
@@ -842,7 +865,7 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
         {editTool === "move" && "Drag a wall or furniture to move it · right-click cancels"}
         {editTool === "add-wall" && (pendingStart ? "Click the end point · right-click cancels" : "Click the floor to start a wall")}
         {(editTool === "add-door" || editTool === "add-window") && "Click a wall where the opening should go"}
-        {editTool === "add-furniture" && (pendingFurniture ? `Placing ${pendingFurniture.label} · R rotates · right-click done` : "Pick a piece below first")}
+        {editTool === "add-furniture" && (pendingFurniture ? `Placing ${pendingFurniture.label} · click floor or table tops · R rotates · right-click done` : "Pick a piece below first")}
         {editTool === "measure" && (measurePts.length === 1 ? "Click the second point" : "Click two points to measure")}
       </div>
     </div>

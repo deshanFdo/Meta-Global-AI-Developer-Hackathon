@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { Door, FurnitureItem, HouseAnalysis, PlanWindow, Wall } from "@/types";
 import type { ElementTag } from "@/lib/geometry";
 import { isOpenable } from "@/lib/geometry";
@@ -51,6 +51,53 @@ function num(value: string, fallback: number, min: number, max: number): number 
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, parsed));
+}
+
+/** Slider that previews locally and commits once on release (no history spam). */
+function CommittedSlider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  format,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  format: (v: number) => string;
+  onCommit: (v: number) => void;
+}): React.JSX.Element {
+  const [draft, setDraft] = useState<number | null>(null);
+  useEffect(() => {
+    setDraft(null);
+  }, [value]);
+  const shown = draft ?? value;
+  return (
+    <Row label={`${label} (${format(shown)})`}>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={shown}
+        onChange={(e) => setDraft(Number(e.target.value))}
+        onPointerUp={() => {
+          if (draft !== null && draft !== value) onCommit(draft);
+          setDraft(null);
+        }}
+        onBlur={() => {
+          if (draft !== null && draft !== value) onCommit(draft);
+          setDraft(null);
+        }}
+        className="w-full"
+        aria-label={label}
+      />
+    </Row>
+  );
 }
 
 export default function CustomizePanel({ analysis, selection, open, onToggleOpen, lampOn, onToggleLamp, onPatch, onDelete, onDuplicate, onSetAllWallHeight, onNudge, onClose, onResume }: Props): React.JSX.Element {
@@ -349,13 +396,24 @@ export default function CustomizePanel({ analysis, selection, open, onToggleOpen
               </select>
             </Row>
           )}
-          <Row label={`Rotation (${furn.rotation}°)`}>
-            <input
-              type="range" min={0} max={359} step={15} value={((furn.rotation % 360) + 360) % 360}
-              onChange={(e) => onPatch("furniture", furn.id, { rotation: Number(e.target.value) })}
-              className="w-full" aria-label="Rotation degrees"
-            />
-          </Row>
+          <CommittedSlider
+            label="Rotation"
+            value={((furn.rotation % 360) + 360) % 360}
+            min={0}
+            max={359}
+            step={15}
+            format={(v) => `${v}°`}
+            onCommit={(v) => onPatch("furniture", furn.id, { rotation: v })}
+          />
+          <CommittedSlider
+            label="Lift off floor"
+            value={furn.baseY ?? 0}
+            min={0}
+            max={2.5}
+            step={0.05}
+            format={(v) => `${v.toFixed(2)} m`}
+            onCommit={(v) => onPatch("furniture", furn.id, { baseY: v })}
+          />
           <div className="grid grid-cols-3 gap-2">
             <Row label="W (m)">
               <input type="number" step="0.05" min={0.15} max={6} defaultValue={furn.width.toFixed(2)} key={`fw-${furn.width}`} className={inputCls}
