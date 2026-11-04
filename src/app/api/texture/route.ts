@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { generateTexture, hasMetaKey, MetaError, MUSE_IMAGE_MODEL } from "@/lib/meta";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 120;
 
@@ -10,6 +11,13 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const limited = rateLimit(`texture:${clientIp(req)}`, 30, 10 * 60_000);
+  if (!limited.ok) {
+    return NextResponse.json(
+      { success: false, error: "Rate limit exceeded. Please wait a moment and retry." },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
+  }
   try {
     const { kind, style } = bodySchema.parse(await req.json());
     if (!hasMetaKey()) {

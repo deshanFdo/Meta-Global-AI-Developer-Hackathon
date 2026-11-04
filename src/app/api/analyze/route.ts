@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { analyzeFloorPlan, auditFurniture, hasMetaKey, MetaError, MUSE_SPARK_MODEL } from "@/lib/meta";
 import { splitWallsAtJunctions } from "@/lib/walls";
+import { clientIp, contentLengthOk, rateLimit } from "@/lib/rate-limit";
 import {
   getEcoCabinAnalysis,
   getScandinavianVillaAnalysis,
@@ -20,6 +21,16 @@ const bodySchema = z.object({
 
 export async function POST(req: NextRequest) {
   const started = Date.now();
+  const limited = rateLimit(`analyze:${clientIp(req)}`, 12, 10 * 60_000);
+  if (!limited.ok) {
+    return NextResponse.json(
+      { success: false, error: "Rate limit exceeded. Please wait a moment and retry." },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
+  }
+  if (!contentLengthOk(req, 17_000_000)) {
+    return NextResponse.json({ success: false, error: "Request body too large." }, { status: 413 });
+  }
   try {
     const body = bodySchema.parse(await req.json());
 

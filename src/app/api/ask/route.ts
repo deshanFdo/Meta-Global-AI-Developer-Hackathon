@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { askAboutPlan, hasMetaKey, MetaError } from "@/lib/meta";
 import type { HouseAnalysis } from "@/types";
+import { clientIp, contentLengthOk, rateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 120;
 
@@ -52,6 +53,16 @@ function localHeuristic(question: string, plan: HouseAnalysis): string {
 }
 
 export async function POST(req: NextRequest) {
+  const limited = rateLimit(`ask:${clientIp(req)}`, 40, 10 * 60_000);
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Please wait a moment and retry." },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
+  }
+  if (!contentLengthOk(req, 500_000)) {
+    return NextResponse.json({ error: "Request body too large." }, { status: 413 });
+  }
   try {
     const raw = await req.text();
     if (raw.length > 300_000) {

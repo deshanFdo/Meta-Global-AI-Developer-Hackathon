@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { hasMetaKey, MetaError, SAM_MODEL } from "@/lib/meta";
 import { SAM_CONCEPTS, segmentConcepts } from "@/lib/sam";
+import { clientIp, contentLengthOk, rateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 180;
 
@@ -12,6 +13,16 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const limited = rateLimit(`sam:${clientIp(req)}`, 24, 10 * 60_000);
+  if (!limited.ok) {
+    return NextResponse.json(
+      { success: false, error: "Rate limit exceeded. Please wait a moment and retry." },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
+  }
+  if (!contentLengthOk(req, 17_000_000)) {
+    return NextResponse.json({ success: false, error: "Request body too large." }, { status: 413 });
+  }
   try {
     const body = bodySchema.parse(await req.json());
     if (!hasMetaKey()) {
