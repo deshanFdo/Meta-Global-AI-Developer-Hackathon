@@ -28,6 +28,7 @@ export default function UploadCard({ onFile, onSample, onBlank, busy, deep, setD
       <h2 className="mb-1 text-sm font-semibold">Floor plan input</h2>
       <p className="mb-3 text-xs text-[var(--muted)]">
         Upload a PNG, JPEG or WebP plan (max 10 MB) for live Muse analysis, or load a labeled sample.
+        Live analysis takes one to three minutes — watch the timer up top.
       </p>
       <button
         type="button"

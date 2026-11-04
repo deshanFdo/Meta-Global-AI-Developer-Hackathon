@@ -142,7 +142,28 @@ function FlowStep({ done, n, label }: { done: boolean; n: number; label: string 
 
 export default function Home(): React.JSX.Element {
   const [apiLive, setApiLive] = useState<boolean | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState<{ label: string; deep: boolean; startedAt: number } | null>(null);
+  const [busyElapsed, setBusyElapsed] = useState(0);
+  const busyAbort = useRef<AbortController | null>(null);
+
+  // Live elapsed timer so long AI calls never look stuck.
+  useEffect(() => {
+    if (!busy) {
+      setBusyElapsed(0);
+      return;
+    }
+    setBusyElapsed(0);
+    const timer = setInterval(() => {
+      setBusyElapsed(Math.floor((Date.now() - busy.startedAt) / 1000));
+    }, 500);
+    return () => clearInterval(timer);
+  }, [busy]);
+
+  const busyText = busy
+    ? busy.deep && busyElapsed >= 35
+      ? `Pass 2/2 · auditing furniture… ${busyElapsed}s`
+      : `${busy.label} · ${busyElapsed}s`
+    : null;
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("plan");
 
@@ -324,16 +345,20 @@ export default function Home(): React.JSX.Element {
       setError("The image exceeds the 10 MB limit.");
       return;
     }
-    setBusy("Reading image…");
+    setBusy({ label: "Reading image", deep, startedAt: Date.now() });
+    const controller = new AbortController();
+    busyAbort.current = controller;
     try {
       const dataUrl = await fileToDataURL(file);
       setDisplayImage(dataUrl);
       setMimeType(file.type);
-      setBusy(deep ? "Analyzing with Muse Spark 1.3 (deep furniture pass)…" : "Analyzing with Muse Spark 1.3…");
+      setBusy({ label: deep ? "Pass 1/2 · extracting structure" : "Analyzing with Muse Spark", deep, startedAt: Date.now() });
+      busyAbort.current = controller;
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: dataUrl, mimeType: file.type, deep }),
+        signal: controller.signal,
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error ?? `Server responded with ${res.status}.`);
@@ -342,15 +367,20 @@ export default function Home(): React.JSX.Element {
       setSource(data.source === "live" ? "live" : "sample");
       setModel(String(data.model ?? "—"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Analysis failed.");
+      if (err instanceof Error && err.name === "AbortError") {
+        setError(null);
+      } else {
+        setError(err instanceof Error ? err.message : "Analysis failed.");
+      }
     } finally {
+      busyAbort.current = null;
       setBusy(null);
     }
   }, [resetForNewAnalysis, deep]);
 
   const handleSample = useCallback(async (kind: ArchetypeKind) => {
     setError(null);
-    setBusy("Loading sample…");
+    setBusy({ label: "Loading sample", deep: false, startedAt: Date.now() });
     try {
       const png = await assetToPngDataURL(SAMPLE_ASSET[kind]);
       setDisplayImage(png);
@@ -1013,8 +1043,17 @@ export default function Home(): React.JSX.Element {
             </span>
           )}
           {(busy || qaBusy || samBusy) && (
-            <span className="rounded-full border border-[var(--border)] px-3 py-1 text-[var(--muted)]">
-              {busy ?? "Working…"}
+            <span className="flex items-center gap-2 rounded-full border border-[var(--border)] px-3 py-1 text-[var(--muted)]">
+              {busyText ?? "Working…"}
+              {busy && (
+                <button
+                  type="button"
+                  onClick={() => busyAbort.current?.abort()}
+                  className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white hover:bg-white/20"
+                >
+                  Cancel
+                </button>
+              )}
             </span>
           )}
         </div>

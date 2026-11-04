@@ -5,7 +5,7 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber"
 import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import type { EditTool, GeneratedTextures, HouseAnalysis } from "@/types";
-import { buildHouseGroup, chimneyBase, disposeGroup, findTag, roofTopY, type ElementTag, type OpenState } from "@/lib/geometry";
+import { buildHouseGroup, chimneyBase, chimneyTopY, disposeGroup, findTag, type ElementTag, type OpenState } from "@/lib/geometry";
 import { buildFurniture, nominalSize, type CatalogEntry } from "@/lib/furnish";
 import InteractiveAnimator from "./InteractiveAnimator";
 import SelectionHighlight from "./SelectionHighlight";
@@ -448,7 +448,7 @@ export default function Viewer3D(props: ViewerProps): React.JSX.Element {
 
   const chimney = useMemo(() => {
     const base = chimneyBase(analysis);
-    return { x: base.x, z: base.z, y: roofTopY(analysis) + 1.3 };
+    return { x: base.x, z: base.z, y: chimneyTopY(analysis) };
   }, [analysis]);
 
   // ---- editor state (add / move / measure tools) ----

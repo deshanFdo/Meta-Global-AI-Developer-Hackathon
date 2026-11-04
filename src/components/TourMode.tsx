@@ -5,7 +5,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid } from "@react-three/drei";
 import * as THREE from "three";
 import type { GeneratedTextures, HouseAnalysis } from "@/types";
-import { buildHouseGroup, chimneyBase, disposeGroup, roofTopY, type OpenState } from "@/lib/geometry";
+import { buildHouseGroup, chimneyBase, chimneyTopY, disposeGroup, type OpenState } from "@/lib/geometry";
 import { buildTour, type TourBeat } from "@/lib/tour";
 import { useTextureMaps } from "@/lib/useTextureMaps";
 import { doorSound } from "@/lib/sound";
@@ -98,7 +98,7 @@ export default function TourMode(props: TourModeProps): React.JSX.Element {
 
   const chimney = useMemo(() => {
     const base = chimneyBase(analysis);
-    return { x: base.x, z: base.z, y: roofTopY(analysis) + 1.3 };
+    return { x: base.x, z: base.z, y: chimneyTopY(analysis) };
   }, [analysis]);
 
   const { overallWidth: w, overallDepth: d } = analysis.metadata;
