@@ -209,6 +209,12 @@ export default function Home(): React.JSX.Element {
   analysisRef.current = analysis;
   const selectionRef = useRef<ElementTag | null>(null);
   selectionRef.current = selection;
+  const selectionPanelRef = useRef<HTMLDivElement>(null);
+
+  // Bring the selection panel into view inside the scrolling sidebar.
+  useEffect(() => {
+    if (selection) selectionPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [selection]);
   const handleDeleteElementRef = useRef<(kind: "wall" | "door" | "window" | "furniture" | "room", id: string) => void>(() => undefined);
   const pastRef = useRef<HouseAnalysis[]>([]);
   const futureRef = useRef<HouseAnalysis[]>([]);
@@ -1028,8 +1034,8 @@ export default function Home(): React.JSX.Element {
   ];
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-3 sm:px-6">
+    <div className="flex min-h-screen flex-col lg:h-screen lg:overflow-hidden">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-3 sm:px-6">
         <div>
           <h1 className="text-lg font-bold leading-tight">BlueprintTo3D</h1>
           <p className="text-[11px] text-[var(--muted)]">Floor plan to interactive 3D · Meta Muse Spark + SAM 3.1 + Muse Image</p>
@@ -1062,8 +1068,8 @@ export default function Home(): React.JSX.Element {
         </div>
       </header>
 
-      <div className="grid flex-1 gap-4 p-4 lg:grid-cols-[400px_minmax(0,1fr)]">
-        <aside className="space-y-4">
+      <div className="grid flex-1 gap-4 p-4 lg:min-h-0 lg:grid-cols-[400px_minmax(0,1fr)]">
+        <aside className="space-y-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
           <UploadCard onFile={handleFile} onSample={handleSample} onBlank={handleBlankProject} busy={busy !== null} deep={deep} setDeep={setDeep} />
           {restoredNote && (
             <div className="panel border-l-4 border-l-[var(--accent)] p-3 text-xs">
@@ -1104,7 +1110,7 @@ export default function Home(): React.JSX.Element {
             </div>
           )}
           {analysis && selection && editTool === "select" && (
-            <div className="panel p-4">
+            <div ref={selectionPanelRef} className="panel scroll-mt-4 p-4">
               <CustomizePanel
                 key={`${selection.kind}:${selection.id}`}
                 analysis={analysis}
@@ -1233,7 +1239,7 @@ export default function Home(): React.JSX.Element {
           )}
         </aside>
 
-        <main className="flex min-w-0 flex-col gap-4">
+        <main className="flex min-w-0 flex-col gap-4 lg:min-h-0 lg:overflow-y-auto">
           <div id="orbit-view" className="relative h-[440px] overflow-hidden rounded-xl border border-[var(--border)] bg-[#0c0e14] lg:h-[520px]">
             {analysis ? (
               <Viewer3D
@@ -1298,7 +1304,7 @@ export default function Home(): React.JSX.Element {
         </main>
       </div>
 
-      <footer className="border-t border-[var(--border)] px-4 py-3 text-center text-[11px] text-[var(--muted)]">
+      <footer className="shrink-0 border-t border-[var(--border)] px-4 py-3 text-center text-[11px] text-[var(--muted)]">
         Dimensions, roof shape and furniture may be inferred. The 3D view shows the ground-floor layout. Nothing here
         certifies structural safety or code compliance. Cost figures are placeholder demo rates.
       </footer>
